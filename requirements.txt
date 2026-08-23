@@ -1,0 +1,33 @@
+pyyaml>=6.0
+google-api-python-client>=2.0
+google-auth>=2.0
+google-auth-httplib2>=0.2
+
+# Bridges SSL verification to the OS trust store -- fixes "curl works,
+# Python doesn't" on networks with an SSL-inspecting proxy (corporate
+# networks, some sandboxes). Optional; falls back cleanly if absent.
+truststore>=0.9
+
+# Sentinel -- real system metrics (CPU/RAM/disk/battery). Installs cleanly.
+psutil>=6.0
+
+# Voice Commander. Install notes (Python 3.14, no Homebrew on this
+# machine -- both were real, live blockers, not hypothetical):
+#   - openai-whisper needs PyTorch, which has NO wheels for Python 3.14
+#     yet (upstream limitation, not fixable here). Do not use it.
+#   - faster-whisper's own `pip install faster-whisper` pulls in `av`
+#     (PyAV), which failed to build without `pkg-config`/Homebrew in one
+#     attempt and succeeded in another on the same machine -- flaky. If it
+#     fails: `pip install --no-deps faster-whisper` then install its real
+#     deps individually (below) -- `av` is only needed for file-based
+#     audio decoding, which this system doesn't use (audio is captured
+#     directly as PCM via sounddevice, never a file).
+faster-whisper>=1.0
+sounddevice>=0.5
+numpy>=1.24
+tokenizers>=0.13
+huggingface-hub>=0.21
+tqdm
+
+# Optional — only needed to enable Claude escalation:
+# anthropic>=0.40

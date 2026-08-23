@@ -1,0 +1,21 @@
+.DS_Store
+shakthi.db
+workspaces/
+__pycache__/
+*.pyc
+.env
+.venv/
+.sheets_sync_state.json
+.alerts_sync_state.json
+*service-account*.json
+.bugfixes/
+
+# dashboard (Next.js)
+dashboard/node_modules/
+dashboard/.next/
+dashboard/next-env.d.ts
+
+# start_dashboard.sh / stop_dashboard.sh
+logs/
+.api.pid
+.dashboard.pid
