@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import access, alerts, audit, bug_fixer, buddy, ceo, config, correction_bot, db, finance, knowledge, registry, routing, security, sentinel, sheets, sitegen, template_registry, voice, voice_history, website_audit, website_builder
+from . import access, alerts, audit, bug_fixer, buddy, ceo, chrome_developer, config, correction_bot, db, dhansetu_ai, failure_analysis, finance, incident_manager, incident_scheduler, initiatives, knowledge, team_register, load_manager, marketing, onboarding, pa_angella, payment_gateway_manager, payments, pdf_studio, peopledesk, pricing, prompt_engine, registry, routing, sales, security, sentinel, sheets, sitegen, skill_test, template_registry, voice, voice_history, website_audit, website_builder, worker_pool
 from . import telegram as tg
 from . import telegram_service as ts
 from .tools.registry import TOOL_REGISTRY
@@ -21,7 +21,8 @@ def _cmd_list_agents():
         rows = db.list_agents(conn)
     for r in rows:
         tools = ", ".join(json.loads(r["allowed_tools"] or "[]")) or "(none)"
-        print(f"{r['id']:20s} layer={r['layer']:12s} tier={r['default_model_tier']:6s} "
+        squad = r["squad"] or "(unassigned)"
+        print(f"{r['id']:20s} squad={squad:16s} layer={r['layer']:12s} tier={r['default_model_tier']:6s} "
               f"scope={r['allowed_scope']:14s} tools={tools}")
 
 
@@ -291,9 +292,14 @@ def _cmd_security_scan(telegram_token, telegram_chat_id, sheets_credentials, she
     print("DB stored: True (security_reports, business_id=NULL for platform-wide scan)")
 
 
-def _cmd_website_audit(url, telegram_token, telegram_chat_id, sheets_credentials, sheets_id):
+def _cmd_website_audit(url, telegram_token, telegram_chat_id, sheets_credentials, sheets_id,
+                        amount=None, razorpay_key_id=None, razorpay_key_secret=None,
+                        customer_name=None, customer_contact=None):
     print(f"WEB-001: Auditing {url} ...")
-    result = website_audit.run_website_audit(url, telegram_token, telegram_chat_id, sheets_credentials, sheets_id)
+    result = website_audit.run_website_audit(url, telegram_token, telegram_chat_id, sheets_credentials, sheets_id,
+                                              payment_amount_inr=amount, razorpay_key_id=razorpay_key_id,
+                                              razorpay_key_secret=razorpay_key_secret,
+                                              customer_name=customer_name, customer_contact=customer_contact)
     print()
     print(result["report_text"])
     print()
@@ -301,6 +307,10 @@ def _cmd_website_audit(url, telegram_token, telegram_chat_id, sheets_credentials
     print(f"Telegram sent: {result['telegram_sent']}" + (f" (error: {result.get('telegram_error')})" if result.get("telegram_error") else ""))
     print(f"Sheets synced: {result['sheets_synced']}" + (f" ({result.get('sheets_error')})" if result.get("sheets_error") else ""))
     print(f"DB stored: True (audits #{result['audit_id']}, audit_findings)")
+    if result.get("payment_link"):
+        print(f"Payment link: {result['payment_link']}")
+    elif result.get("payment_error"):
+        print(f"Payment link NOT created (error: {result['payment_error']})")
 
 
 def _cmd_correct(task_type, task_ref, content_file, telegram_token, telegram_chat_id, sheets_credentials, sheets_id):
@@ -329,6 +339,529 @@ def _cmd_correction_history(limit):
               f"issues={r['issues_found']}/{r['issues_fixed']} fixed · final={r['final_status']} · {r['created_at']}")
 
 
+def _cmd_create_payment_link(key_id, key_secret, amount, description, customer_name, customer_contact, reference_id):
+    result = payments.create_payment_link(key_id, key_secret, amount, description,
+                                           customer_name=customer_name, customer_contact=customer_contact,
+                                           reference_id=reference_id)
+    with db.get_conn() as conn:
+        db.insert_payment_link(conn, result["id"], result["short_url"], result["amount_inr"], description,
+                                customer_name=customer_name, customer_contact=customer_contact,
+                                reference_id=reference_id, status=result["status"])
+    print(f"Payment link created: {result['short_url']}")
+    print(f"  id: {result['id']}  amount: Rs.{result['amount_inr']}  status: {result['status']}")
+    print("Stored in DB (payment_links). Send the URL above to the customer.")
+
+
+def _cmd_check_payment(key_id, key_secret, link_id):
+    result = payments.get_payment_link_status(key_id, key_secret, link_id)
+    with db.get_conn() as conn:
+        db.update_payment_link_status(conn, result["id"], result["status"])
+    print(f"Payment link {result['id']}: status={result['status']} "
+          f"paid=Rs.{result['amount_paid_inr']}/Rs.{result['amount_inr']}")
+
+
+def _cmd_payment_links(status, limit):
+    with db.get_conn() as conn:
+        rows = db.list_payment_links(conn, status=status, limit=limit)
+    if not rows:
+        print("No payment links created yet.")
+        return
+    for r in rows:
+        print(f"#{r['id']} [{r['status']}] Rs.{r['amount_inr']} · {r['description']} · "
+              f"{r['customer_name'] or '(no name)'} · {r['short_url']} · {r['created_at']}")
+
+
+def _cmd_website_review(url, business_id, telegram_token, telegram_chat_id):
+    print(f"Chrome Developer Bot: reviewing {url} ...")
+    result = chrome_developer.review_website(url, business_id=business_id,
+                                              telegram_token=telegram_token, telegram_chat_id=telegram_chat_id)
+    print()
+    print(result["report_text"])
+    print()
+    print(f"Browser-driven checks available: {result['browser_audit_available']}")
+    print(f"Telegram sent: {result['telegram_sent']}" + (f" (error: {result.get('telegram_error')})" if result.get("telegram_error") else ""))
+    print(f"DB stored: True (website_reviews #{result['review_id']})")
+
+
+def _cmd_stripe_checkout(secret_key, amount, currency, description, success_url, cancel_url):
+    result = payment_gateway_manager.create_stripe_checkout_session(secret_key, amount, currency, description,
+                                                                      success_url, cancel_url)
+    print(f"Stripe Checkout session created: {result['checkout_url']}")
+    print(f"  session_id: {result['session_id']}")
+
+
+def _cmd_upi_link(vpa, payee_name, amount, note):
+    link = payment_gateway_manager.generate_upi_link(vpa, payee_name, amount, note=note or "")
+    print(f"UPI link: {link}")
+
+
+def _cmd_gateway_status(razorpay_key_id, razorpay_key_secret, stripe_secret_key, upi_vpa, payu_merchant_key, payu_merchant_salt):
+    status = payment_gateway_manager.gateway_status(razorpay_key_id=razorpay_key_id, razorpay_key_secret=razorpay_key_secret,
+                                                      stripe_secret_key=stripe_secret_key, upi_vpa=upi_vpa,
+                                                      payu_merchant_key=payu_merchant_key, payu_merchant_salt=payu_merchant_salt)
+    for gateway, s in status.items():
+        print(f"{gateway}: configured={s['configured']} valid={s['valid']}")
+
+
+def _cmd_create_subscription_plan(razorpay_key_id, razorpay_key_secret, amount, plan_name, interval, period):
+    result = payment_gateway_manager.create_razorpay_subscription_plan(razorpay_key_id, razorpay_key_secret, amount,
+                                                                         plan_name, interval=interval, period=period)
+    print(f"Subscription plan created: {result['plan_id']}")
+
+
+def _cmd_create_subscription(razorpay_key_id, razorpay_key_secret, plan_id, total_count):
+    result = payment_gateway_manager.create_razorpay_subscription(razorpay_key_id, razorpay_key_secret, plan_id,
+                                                                    total_count=total_count)
+    print(f"Subscription created: {result['subscription_id']}")
+    if result.get("short_url"):
+        print(f"  Customer signup link: {result['short_url']}")
+
+
+def _cmd_prompt_render(target, role, task, output_format):
+    prompt = prompt_engine.render_prompt(target, role, task, output_format=output_format)
+    print(prompt)
+
+
+def _cmd_prompt_lint(agent_id):
+    with db.get_conn() as conn:
+        agent = db.get_agent(conn, agent_id)
+    if not agent:
+        print(f"no such agent: {agent_id}")
+        return
+    issues = prompt_engine.lint_role_prompt(agent["role_prompt"])
+    if not issues:
+        print(f"{agent_id}: no structural issues found")
+    else:
+        print(f"{agent_id}: {len(issues)} issue(s)")
+        for i in issues:
+            print(f"  - {i}")
+
+
+def _cmd_worker_enqueue(kind, payload_json, priority):
+    payload = json.loads(payload_json) if payload_json else {}
+    qid = worker_pool.enqueue_task(kind, payload, priority=priority)
+    print(f"Enqueued work #{qid} [{kind}]")
+
+
+def _cmd_worker_drain(max_workers, telegram_token, telegram_chat_id):
+    result = worker_pool.drain_queue(max_workers=max_workers, telegram_token=telegram_token, telegram_chat_id=telegram_chat_id)
+    print(f"Dispatched: {result['dispatched']}  Succeeded: {result['succeeded']}  Failed: {result['failed']}")
+    if result.get("failures"):
+        for f in result["failures"]:
+            print(f"  FAILED #{f['id']} [{f['kind']}]: {f['error']}")
+    lb = result["load_balancer"]
+    print(f"Load balancer: queue_depth={lb['queue_depth']} scaled_up={lb['scaled_up']} overflowing={lb['overflowing']}")
+
+
+def _cmd_worker_daemon(interval_seconds, telegram_token, telegram_chat_id):
+    worker_pool.run_worker_daemon(interval_seconds, telegram_token=telegram_token, telegram_chat_id=telegram_chat_id)
+
+
+def _cmd_worker_status():
+    worker_pool.ensure_workers_registered()
+    with db.get_conn() as conn:
+        workers = db.list_workers(conn)
+        lb = load_manager.load_balancer_status(conn)
+        queue = db.list_work_queue(conn, limit=20)
+    print(f"Load Balancer: queue_depth={lb['queue_depth']} threshold={lb['scale_threshold']} "
+          f"max={lb['max_queue_size']} scaled_up={lb['scaled_up']} overflowing={lb['overflowing']}")
+    print()
+    print("Workers:")
+    for w in workers:
+        print(f"  {w['name']:16} [{w['status']:5}] completed={w['tasks_completed']} failed={w['tasks_failed']} last_active={w['last_active_at'] or '-'}")
+    print()
+    print("Recent queue:")
+    for q in queue:
+        print(f"  #{q['id']} [{q['status']:8}] {q['kind']} (priority={q['priority']}) {q['created_at']}")
+
+
+def _cmd_pdf_process(operation, inputs, output, password, degrees, pages_str):
+    if not inputs:
+        print("--pdf-process requires at least one --pdf-input")
+        return
+    page_numbers = [int(p) for p in pages_str.split(",")] if pages_str else None
+    try:
+        if operation == "merge":
+            result = pdf_studio.merge_pdfs(inputs, output)
+        elif operation == "split":
+            split_result = pdf_studio.split_pdf(inputs[0], output)
+            zip_path = str(Path(output) / "split_pages.zip")
+            result = {**split_result, **pdf_studio.zip_dir(output, zip_path)}
+        elif operation == "compress":
+            result = pdf_studio.compress_pdf(inputs[0], output)
+        elif operation == "images-to-pdf":
+            result = pdf_studio.images_to_pdf(inputs, output)
+        elif operation == "rotate":
+            if degrees is None:
+                print("--pdf-operation rotate requires --pdf-degrees")
+                return
+            result = pdf_studio.rotate_pdf(inputs[0], output, degrees, page_numbers=page_numbers)
+        elif operation == "extract":
+            if not page_numbers:
+                print("--pdf-operation extract requires --pdf-pages, e.g. --pdf-pages 1,3,5")
+                return
+            result = pdf_studio.extract_pages(inputs[0], output, page_numbers)
+        elif operation == "protect":
+            if not password:
+                print("--pdf-operation protect requires --pdf-password")
+                return
+            result = pdf_studio.password_protect(inputs[0], output, password)
+        elif operation == "unprotect":
+            if not password:
+                print("--pdf-operation unprotect requires --pdf-password")
+                return
+            result = pdf_studio.remove_password(inputs[0], output, password)
+        else:
+            print(f"unknown --pdf-operation: {operation}")
+            return
+    except pdf_studio.PdfStudioError as e:
+        print(f"PDF Studio error: {e}")
+        return
+    print(f"{operation}: {result}")
+
+
+def _cmd_incident_create(incident_type, description, telegram_token, telegram_chat_id):
+    result = incident_manager.create_incident(incident_type, description,
+                                               telegram_token=telegram_token, telegram_chat_id=telegram_chat_id)
+    print(f"{result['incident_number']} created — type={incident_type} severity={result['severity']} "
+          f"owner={result['owner']}{' (ESCALATED)' if result['escalated'] else ''}")
+    print(f"  support: {', '.join(result['support_team'])}")
+    print(f"  reason: {result['reason']}")
+
+
+def _cmd_incident_transition(incident_number, status, note):
+    result = incident_manager.transition(incident_number, status, note=note or "")
+    print(f"{incident_number}: {result['status']}")
+
+
+def _cmd_incident_resolve(incident_number, root_cause, fix):
+    if not (root_cause and fix):
+        print("--incident-resolve requires --root-cause and --fix")
+        return
+    result = incident_manager.resolve(incident_number, root_cause, fix)
+    print(f"{incident_number}: RESOLVED (root_cause={root_cause})")
+
+
+def _cmd_incident_close(incident_number):
+    result = incident_manager.close(incident_number)
+    print(f"{incident_number}: CLOSED")
+    if result.get("postmortem_error"):
+        print(f"  postmortem generation failed: {result['postmortem_error']}")
+    else:
+        print(f"  postmortem: {config.POSTMORTEMS_DIR / (incident_number + '_postmortem.md')}")
+
+
+def _cmd_incident_list(status):
+    with db.get_conn() as conn:
+        rows = db.list_incidents(conn, status=status, limit=50)
+    if not rows:
+        print("No incidents.")
+        return
+    for r in rows:
+        print(f"{r['incident_number']} [{r['status']}] {r['severity']} {r['incident_type']} owner={r['owner']} {r['created_at']}")
+
+
+def _cmd_incident_sweep(website_urls, telegram_token, telegram_chat_id):
+    urls = website_urls.split(",") if website_urls else None
+    result = incident_scheduler.run_detection_sweep(website_urls=urls, telegram_token=telegram_token, telegram_chat_id=telegram_chat_id)
+    print(f"Detection sweep: {result['count']} incident(s) created")
+    for inc in result["incidents_created"]:
+        print(f"  {inc['incident_number']} — {inc['incident_type']} ({inc['severity']})")
+
+
+def _cmd_pricing_check(email, product):
+    try:
+        result = pricing.check_access(email, product)
+    except pricing.PricingError as e:
+        print(json.dumps({"error": str(e)}))
+        return
+    print(json.dumps(result, default=str))
+
+
+def _cmd_pricing_record_usage(email, product):
+    try:
+        count = pricing.record_usage(email, product)
+    except pricing.PricingError as e:
+        print(json.dumps({"error": str(e)}))
+        return
+    print(json.dumps({"email": email, "product": product, "use_count": count}))
+
+
+def _cmd_lead_ingest(business_id, name, email, source, contact, notes, telegram_token, telegram_chat_id):
+    result = sales.ingest_lead(business_id, name, email, source, contact=contact, notes=notes,
+                                telegram_token=telegram_token, telegram_chat_id=telegram_chat_id)
+    print(json.dumps(result, default=str))
+
+
+def _cmd_lead_score(lead_id):
+    print(json.dumps(sales.score_lead(lead_id), default=str))
+
+
+def _cmd_lead_outreach(lead_id):
+    print(json.dumps(sales.draft_outreach(lead_id), default=str))
+
+
+def _cmd_lead_proposal(lead_id, deal_context):
+    print(json.dumps(sales.draft_proposal(lead_id, deal_context or ""), default=str))
+
+
+def _cmd_lead_list(status, owner):
+    with db.get_conn() as conn:
+        leads = db.list_leads(conn, status=status, owner=owner)
+    print(json.dumps(leads, default=str))
+
+
+def _cmd_marketing_generate(business_id, content_type, target, brief, count):
+    results = marketing.generate_content(business_id, content_type, target, brief, count=count)
+    print(json.dumps(results, default=str))
+
+
+def _cmd_marketing_send_to_sales(content_id, lead_id):
+    print(json.dumps(marketing.send_to_sales(content_id, lead_id=lead_id), default=str))
+
+
+def _cmd_content_list(content_type, status):
+    with db.get_conn() as conn:
+        items = db.list_content_queue(conn, content_type=content_type, status=status)
+    print(json.dumps(items, default=str))
+
+
+def _cmd_team_add_worker(business_id, name, role, contact):
+    worker_id = team_register.add_worker(business_id, name, role=role, contact=contact)
+    print(json.dumps({"worker_id": worker_id, "name": name}))
+
+
+def _cmd_team_list_workers(business_id, status):
+    print(json.dumps(team_register.list_workers(business_id=business_id, status=status), default=str))
+
+
+def _cmd_team_log_day(worker_id, work_date, present, hours, work_assigned, work_done, notes):
+    entry = team_register.log_day(worker_id, work_date, present=present, hours_worked=hours,
+                                    work_assigned=work_assigned, work_done=work_done, notes=notes)
+    print(json.dumps(entry, default=str))
+
+
+def _cmd_team_day_summary(work_date, business_id):
+    print(json.dumps(team_register.daily_summary(work_date, business_id=business_id), default=str))
+
+
+def _cmd_team_worker_summary(worker_id, date_from, date_to):
+    print(json.dumps(team_register.worker_summary(worker_id, date_from=date_from, date_to=date_to), default=str))
+
+
+def _cmd_team_worker_history(worker_id, date_from, date_to):
+    print(json.dumps(team_register.worker_history(worker_id, date_from=date_from, date_to=date_to), default=str))
+
+
+def _cmd_skill_test_all():
+    for r in skill_test.run_all():
+        print(json.dumps(r, default=str))
+
+
+def _cmd_skill_test_one(agent_id):
+    print(json.dumps(skill_test.grade_agent(agent_id), default=str))
+
+
+def _cmd_skill_review_list():
+    print(json.dumps(skill_test.latest_reviews(), default=str))
+
+
+def _cmd_dhansetu_ingest_sheet(business_id, credentials_path, spreadsheet_id, sheet_name):
+    ids = dhansetu_ai.ingest_course_titles_from_sheet(business_id, credentials_path, spreadsheet_id, sheet_name or "Courses")
+    print(json.dumps({"course_ids": ids, "count": len(ids)}))
+
+
+def _cmd_dhansetu_draft_course(course_id):
+    print(json.dumps(dhansetu_ai.draft_course(course_id), default=str))
+
+
+def _cmd_dhansetu_write_prompt(course_id, brief):
+    print(json.dumps(dhansetu_ai.write_visual_prompt(course_id, brief=brief), default=str))
+
+
+def _cmd_dhansetu_write_reel(course_id, brief):
+    print(json.dumps(dhansetu_ai.write_reel_script(course_id, brief=brief), default=str))
+
+
+def _cmd_dhansetu_schedule_post(content_id, platform):
+    print(json.dumps(dhansetu_ai.schedule_post(content_id, platform=platform or "instagram"), default=str))
+
+
+def _cmd_dhansetu_list_courses(business_id, status):
+    with db.get_conn() as conn:
+        print(json.dumps(db.list_courses(conn, business_id=business_id, status=status), default=str))
+
+
+def _cmd_dhansetu_ready_to_post(platform):
+    print(json.dumps(dhansetu_ai.list_ready_to_post(platform=platform or "instagram"), default=str))
+
+
+def _cmd_pa_refine(message, business_id):
+    print(json.dumps(pa_angella.refine_prompt(message, business_id=business_id), default=str))
+
+
+def _cmd_pa_send_to_ceo(message, business_id):
+    print(json.dumps(pa_angella.refine_and_send_to_ceo(message, business_id=business_id), default=str))
+
+
+def _cmd_pa_voice(message, business_id, gender):
+    print(json.dumps(pa_angella.refine_and_speak(message, business_id=business_id, gender=gender or "female"), default=str))
+
+
+def _cmd_dhansetu_add_link(business_id, title, url, sort_order):
+    with db.get_conn() as conn:
+        link_id = db.insert_link(conn, business_id, title, url, sort_order or 0)
+    print(json.dumps({"link_id": link_id, "title": title, "url": url}))
+
+
+def _cmd_dhansetu_list_links(business_id):
+    with db.get_conn() as conn:
+        print(json.dumps(db.list_links(conn, business_id=business_id, active_only=False), default=str))
+
+
+def _cmd_discovery_start(args):
+    fields = {key: getattr(args, f"discovery_{key}") for key, _label, _req in onboarding.INTAKE_FIELDS}
+    try:
+        discovery_id = onboarding.start_discovery(fields)
+    except ValueError as e:
+        print(json.dumps({"error": str(e)}))
+        return
+    print(json.dumps({"discovery_id": discovery_id}))
+
+
+def _cmd_discovery_analyze(discovery_id):
+    print(json.dumps(onboarding.analyze_discovery(discovery_id), default=str))
+
+
+def _cmd_discovery_list(status):
+    with db.get_conn() as conn:
+        print(json.dumps(db.list_business_discoveries(conn, status=status), default=str))
+
+
+def _cmd_subscribe(email, product, gateway, razorpay_key_id, razorpay_key_secret, payu_merchant_key,
+                    payu_merchant_salt, success_url, failure_url):
+    kwargs = {}
+    if gateway == "razorpay":
+        if not (razorpay_key_id and razorpay_key_secret):
+            print("--subscribe --gateway razorpay requires --razorpay-key-id and --razorpay-key-secret")
+            return
+        kwargs = {"razorpay_key_id": razorpay_key_id, "razorpay_key_secret": razorpay_key_secret}
+    elif gateway == "payu":
+        if not (payu_merchant_key and payu_merchant_salt and success_url and failure_url):
+            print("--subscribe --gateway payu requires --payu-merchant-key, --payu-merchant-salt, --success-url, --failure-url")
+            return
+        kwargs = {"payu_merchant_key": payu_merchant_key, "payu_merchant_salt": payu_merchant_salt,
+                  "success_url": success_url, "failure_url": failure_url}
+    else:
+        print("--gateway must be 'razorpay' or 'payu'")
+        return
+
+    try:
+        result = pricing.create_subscription_payment(email, product, gateway, **kwargs)
+    except (pricing.PricingError, payment_gateway_manager.PaymentGatewayError) as e:
+        # Real gap found live-testing server-side credentials: this used to
+        # let a gateway failure (e.g. a bad key -> Razorpay 401) crash
+        # uncaught, which dumped a full Python stack trace -- file paths
+        # included -- straight into the API route's JSON error response.
+        print(json.dumps({"error": str(e)}))
+        return
+    print(json.dumps(result, default=str))
+
+
+def _cmd_initiative_add(title, artifact_url):
+    result = initiatives.add_initiative(title, artifact_url=artifact_url)
+    print(f"Task {result['seq']} (#{result['id']}): {title}")
+
+
+def _cmd_milestone_add(initiative_id, title, done):
+    result = initiatives.add_milestone(initiative_id, title, done=done)
+    print(f"Milestone added to Task {result['seq']} -- now {result['percent_complete']}% "
+          f"({result['milestone_done']}/{result['milestone_total']})")
+
+
+def _cmd_milestone_done(milestone_id):
+    initiatives.mark_milestone(milestone_id, done=True)
+    print(f"Milestone #{milestone_id} marked done")
+
+
+def _cmd_initiative_status(initiative_id, status):
+    result = initiatives.set_status(initiative_id, status)
+    print(f"Task {result['seq']} status -> {result['status']}")
+
+
+def _cmd_initiatives_list():
+    rows = initiatives.list_all()
+    if not rows:
+        print("No initiatives tracked yet.")
+        return
+    for r in rows:
+        print(f"Task {r['seq']} (#{r['id']}) [{r['status']}] {r['percent_complete']}% "
+              f"({r['milestone_done']}/{r['milestone_total']}) -- {r['title']}")
+        for m in r["milestones"]:
+            mark = "x" if m["done"] else " "
+            print(f"    [{mark}] #{m['id']} {m['title']}")
+
+
+def _cmd_failure_analysis_add(json_path):
+    with open(json_path) as f:
+        data = json.load(f)
+    required = ("source_type", "title", "severity", "summary", "five_whys",
+                "root_cause", "corrective_action", "preventive_action", "lessons_learned")
+    missing = [k for k in required if k not in data]
+    if missing:
+        print(json.dumps({"error": f"missing required field(s): {', '.join(missing)}"}))
+        return
+    analysis_id = failure_analysis.record_analysis(
+        data["source_type"], data.get("source_id"), data["title"], data["severity"],
+        data["summary"], data["five_whys"], data["root_cause"], data["corrective_action"],
+        data["preventive_action"], data["lessons_learned"], data.get("status", "open"),
+    )
+    print(f"Failure analysis #{analysis_id} recorded: {data['title']}")
+
+
+def _cmd_failure_analyses_list(status):
+    rows = failure_analysis.list_analyses(status=status)
+    if not rows:
+        print("No failure analyses recorded yet.")
+        return
+    for r in rows:
+        print(f"#{r['id']} [{r['severity']}] [{r['status']}] {r['title']}")
+        print(f"    Root cause: {r['root_cause']}")
+        print(f"    Preventive action: {r['preventive_action']}")
+
+
+def _cmd_peopledesk_add_staff(owner_email, name, role, phone, pay_type, daily_wage, monthly_salary, join_date):
+    try:
+        staff = peopledesk.add_staff(owner_email, name, role or "", phone or "", pay_type,
+                                      daily_wage, monthly_salary, join_date or "")
+    except ValueError as e:
+        print(json.dumps({"error": str(e)}))
+        return
+    print(json.dumps(staff, default=str))
+
+
+def _cmd_peopledesk_list_staff(owner_email, status):
+    print(json.dumps({"staff": peopledesk.list_staff(owner_email, status=status)}, default=str))
+
+
+def _cmd_peopledesk_mark_attendance(staff_id, attendance_date, status):
+    try:
+        peopledesk.mark_attendance(staff_id, attendance_date, status)
+    except ValueError as e:
+        print(json.dumps({"error": str(e)}))
+        return
+    print(json.dumps({"ok": True}))
+
+
+def _cmd_peopledesk_payroll(owner_email, date_from, date_to):
+    print(json.dumps({"summary": peopledesk.payroll_summary(owner_email, date_from, date_to)}, default=str))
+
+
+def _cmd_chat_message(agent_id, message):
+    result = routing.run_task(agent_id, message)
+    print(json.dumps({"task_id": result["task_id"], "reply": result["output"]}, default=str))
+
+
 def _cmd_knowledge_add(category, title, content, tags):
     doc_id = knowledge.add_document(category, title, content, tags)
     print(f"Added knowledge document #{doc_id}: {title}")
@@ -348,13 +881,19 @@ def _cmd_buddy_chat(message, mode, session_id):
         print(f"[Safe Mode triggered: {result['blocked_reason']}]", file=sys.stderr)
 
 
-def _cmd_voice_listen(seconds, owner_passphrase):
-    result = voice.listen_and_execute(seconds=seconds, identity_passphrase=owner_passphrase)
+def _cmd_voice_listen(seconds, owner_passphrase, voice_gender, voice_mute):
+    result = voice.listen_and_execute(seconds=seconds, identity_passphrase=owner_passphrase,
+                                       speak_response=not voice_mute, gender=voice_gender)
     print(f"Heard ({result['identity']}, {result['language']}): {result['transcript']}")
     print(f"Routed to: {result['intent']['category']}/{result['intent']['action']}")
     if result.get("ceo_status"):
         print(f"CEO review: {result['ceo_status']}")
     print(f"Result: {result['result']}")
+
+
+def _cmd_voice_loop(window_seconds, owner_passphrase, voice_gender, voice_mute):
+    voice.listen_loop(window_seconds=window_seconds, identity_passphrase=owner_passphrase,
+                       announce=not voice_mute, gender=voice_gender)
 
 
 def _cmd_voice_history(limit):
@@ -516,7 +1055,195 @@ def main():
     parser.add_argument("--task-ref", default=None, help="free-text pointer to the source, used with --correct")
     parser.add_argument("--correction-history", nargs="?", const=20, type=int, metavar="N",
                          help="print the last N corrections (default 20)")
+    parser.add_argument("--create-payment-link", action="store_true",
+                         help="Razorpay: create a payment link (Offer A). Requires --razorpay-key-id, --razorpay-key-secret, --razorpay-amount, --description")
+    parser.add_argument("--check-payment", metavar="LINK_ID", help="Razorpay: fetch a payment link's current status")
+    parser.add_argument("--payment-links", action="store_true", help="list payment links stored in the DB")
+    parser.add_argument("--razorpay-key-id", default=None, help="Razorpay Key ID -- never stored, passed every invocation")
+    parser.add_argument("--razorpay-key-secret", default=None, help="Razorpay Key Secret -- never stored, passed every invocation")
+    parser.add_argument("--razorpay-amount", type=float, default=None, help="amount in INR, used with --create-payment-link or --website-audit")
+    # --description already declared above (bug reports) -- reused here for --create-payment-link's payer-facing text
+    parser.add_argument("--customer-name", default=None)
+    parser.add_argument("--customer-contact", default=None, help="customer phone number (E.164 or 10-digit Indian)")
+    parser.add_argument("--reference-id", default=None, help="e.g. 'web-audit:dhansetuhub.in'")
+    parser.add_argument("--status", default=None, help="filter for --payment-links (created|paid|cancelled|expired)")
+
+    parser.add_argument("--website-review", metavar="URL", help="Chrome Developer Bot: real browser-driven website review -> Telegram, stored in DB")
+    parser.add_argument("--stripe-checkout", action="store_true", help="Stripe: create a Checkout session. Requires --stripe-secret-key, --razorpay-amount, --description, --success-url, --cancel-url")
+    parser.add_argument("--stripe-secret-key", default=None)
+    parser.add_argument("--stripe-currency", default="usd")
+    parser.add_argument("--success-url", default=None)
+    parser.add_argument("--cancel-url", default=None)
+    parser.add_argument("--upi-link", action="store_true", help="Generate a UPI deep link. Requires --upi-vpa, --razorpay-amount, --customer-name (payee name)")
+    parser.add_argument("--upi-vpa", default=None, help="e.g. founder@okhdfcbank")
+    parser.add_argument("--gateway-status", action="store_true", help="Check which payment gateways are configured/valid")
+    parser.add_argument("--create-subscription-plan", action="store_true", help="Razorpay Subscriptions: create a plan. Requires --razorpay-key-id/secret, --razorpay-amount, --plan-name")
+    parser.add_argument("--create-subscription", action="store_true", help="Razorpay Subscriptions: subscribe a customer to a plan. Requires --razorpay-key-id/secret, --plan-id")
+    parser.add_argument("--plan-id", default=None)
+    parser.add_argument("--plan-name", default=None)
+    parser.add_argument("--sub-interval", type=int, default=1)
+    parser.add_argument("--sub-period", default="monthly", choices=["daily", "weekly", "monthly", "yearly"])
+    parser.add_argument("--total-count", type=int, default=12, help="number of billing cycles for --create-subscription")
+    parser.add_argument("--prompt-render", action="store_true", help="Render a prompt template. Requires --prompt-target, --prompt-role, --prompt-task")
+    parser.add_argument("--prompt-target", default="claude", choices=list(prompt_engine.MODEL_PROFILES))
+    parser.add_argument("--prompt-role", default=None)
+    parser.add_argument("--prompt-task", default=None)
+    parser.add_argument("--prompt-output-format", default=None)
+    parser.add_argument("--prompt-lint", metavar="AGENT_ID", help="Lint a registered agent's role_prompt for structural issues")
+
+    parser.add_argument("--worker-enqueue", metavar="KIND", help="Enqueue a task. Requires --payload-json (see worker_registry.TASK_KINDS for valid kinds)")
+    parser.add_argument("--payload-json", default=None, help='JSON payload for --worker-enqueue, e.g. \'{"url": "https://example.com"}\'')
+    parser.add_argument("--queue-priority", type=int, default=5, help="lower = higher priority, used with --worker-enqueue")
+    parser.add_argument("--worker-drain", action="store_true", help="Dispatch all queued work in parallel, once, then exit")
+    parser.add_argument("--worker-daemon", action="store_true", help="Continuously drain the queue every --interval seconds (Ctrl+C to stop)")
+    parser.add_argument("--worker-status", action="store_true", help="Show Worker Status, Load Balancer Status, and the Task Queue")
+    parser.add_argument("--max-workers", type=int, default=None, help="cap concurrency for --worker-drain (default: auto, from load_manager)")
+
+    parser.add_argument("--pdf-process", metavar="OPERATION",
+                         choices=["merge", "split", "compress", "images-to-pdf", "rotate", "extract", "protect", "unprotect"],
+                         help="Dhansetu PDF Studio: run a real PDF operation")
+    parser.add_argument("--pdf-input", action="append", default=[], help="input file path; repeat for multiple files (merge, images-to-pdf)")
+    parser.add_argument("--pdf-output", default=None, help="output file path (or directory, for split)")
+    parser.add_argument("--pdf-password", default=None, help="used with --pdf-process protect/unprotect")
+    parser.add_argument("--pdf-degrees", type=int, default=None, help="used with --pdf-process rotate (multiple of 90)")
+    parser.add_argument("--pdf-pages", default=None, help='comma-separated 1-indexed page numbers, e.g. "1,3,5" -- used with rotate/extract')
+
+    parser.add_argument("--incident-create", metavar="INCIDENT_TYPE", help="Create an incident. Requires --description (see incident_registry.OWNERSHIP_MATRIX for valid types)")
+    parser.add_argument("--incident-transition", metavar="INCIDENT_NUMBER", help="Move an incident to a new state. Requires --to-status")
+    parser.add_argument("--to-status", default=None, choices=incident_manager.STATE_ORDER)
+    parser.add_argument("--incident-resolve", metavar="INCIDENT_NUMBER", help="Resolve an incident. Requires --root-cause and --fix")
+    parser.add_argument("--root-cause", default=None)
+    parser.add_argument("--fix", default=None)
+    parser.add_argument("--incident-close", metavar="INCIDENT_NUMBER", help="Close a resolved incident and generate its postmortem")
+    parser.add_argument("--incident-list", action="store_true", help="List recent incidents")
+    parser.add_argument("--incident-sweep", action="store_true", help="Run automatic emergency detection now")
+    parser.add_argument("--website-urls", default=None, help="comma-separated URLs for --incident-sweep to check")
+
+    parser.add_argument("--subscribe", action="store_true", help="Create a subscription payment. Requires --email, --product, --gateway")
+    parser.add_argument("--pricing-check", action="store_true", help="Check free-tier/subscription access. Requires --email, --product")
+    parser.add_argument("--pricing-record-usage", action="store_true", help="Record one use after an allowed pricing check. Requires --email, --product")
+    parser.add_argument("--email", default=None)
+    parser.add_argument("--product", default=None, choices=list(pricing.PRODUCT_PRICING))
+    parser.add_argument("--gateway", default=None, choices=["razorpay", "payu"])
+    parser.add_argument("--failure-url", default=None)
+
+    parser.add_argument("--lead-ingest", action="store_true", help="New lead -> auto-route to sales (score, then outreach or founder escalation). Requires --lead-name, --lead-email, --lead-source")
+    parser.add_argument("--lead-score", type=int, default=None, metavar="LEAD_ID", help="Re-score an existing lead")
+    parser.add_argument("--lead-outreach", type=int, default=None, metavar="LEAD_ID", help="Draft outreach for an existing lead")
+    parser.add_argument("--lead-proposal", type=int, default=None, metavar="LEAD_ID", help="Draft a proposal for an existing lead")
+    parser.add_argument("--lead-list", action="store_true", help="List leads")
+    parser.add_argument("--lead-name", default=None)
+    parser.add_argument("--lead-email", default=None)
+    parser.add_argument("--lead-contact", default=None)
+    parser.add_argument("--lead-source", default=None)
+    parser.add_argument("--lead-notes", default=None)
+    parser.add_argument("--lead-status", default=None, help="filter for --lead-list")
+    parser.add_argument("--lead-owner", default=None, choices=["sales", "founder"], help="filter for --lead-list")
+    parser.add_argument("--deal-context", default=None, help="context for --lead-proposal")
+
+    parser.add_argument("--marketing-generate", action="store_true", help="Generate N content variants. Requires --content-type, --marketing-target, --brief")
+    parser.add_argument("--marketing-send-to-sales", type=int, default=None, metavar="CONTENT_ID", help="Hand a content_queue item to the Sales agent")
+    parser.add_argument("--content-list", action="store_true", help="List content_queue items")
+    parser.add_argument("--content-type", default=None, choices=["linkedin_post", "twitter_thread", "landing_copy", "cold_email", "ad_angle"])
+    parser.add_argument("--content-status", default=None, help="filter for --content-list")
+    parser.add_argument("--marketing-target", default=None, help="audience for --marketing-generate, e.g. 'agency founders'")
+    parser.add_argument("--brief", default=None, help="offer/brief for --marketing-generate")
+    parser.add_argument("--count", type=int, default=3, help="number of variants for --marketing-generate")
+    parser.add_argument("--lead-id", type=int, default=None, help="target lead for --marketing-send-to-sales (optional)")
+
+    parser.add_argument("--team-add-worker", action="store_true", help="Add a team member. Requires --worker-name")
+    parser.add_argument("--team-list-workers", action="store_true", help="List team members")
+    parser.add_argument("--team-log-day", action="store_true", help="Log one worker's day. Requires --worker-id, --work-date")
+    parser.add_argument("--team-day-summary", metavar="YYYY-MM-DD", default=None, help="Who worked on this date")
+    parser.add_argument("--team-worker-summary", type=int, default=None, metavar="WORKER_ID", help="Attendance/hours rollup for one worker")
+    parser.add_argument("--team-worker-history", type=int, default=None, metavar="WORKER_ID", help="Raw day-by-day log for one worker")
+    parser.add_argument("--worker-name", default=None)
+    parser.add_argument("--worker-role", default=None)
+    parser.add_argument("--worker-contact", default=None)
+    parser.add_argument("--worker-id", type=int, default=None, help="target worker for --team-log-day")
+    parser.add_argument("--team-status", default=None, choices=["active", "inactive"], help="filter for --team-list-workers")
+    parser.add_argument("--work-date", default=None, help="YYYY-MM-DD, for --team-log-day")
+    parser.add_argument("--present", dest="present", action="store_true", default=True, help="default for --team-log-day")
+    parser.add_argument("--absent", dest="present", action="store_false", help="mark --team-log-day as absent instead")
+    parser.add_argument("--hours", type=float, default=None, help="hours worked, for --team-log-day")
+    parser.add_argument("--work-assigned", default=None)
+    parser.add_argument("--work-done", default=None)
+    parser.add_argument("--notes", default=None)
+    parser.add_argument("--date-from", default=None, help="YYYY-MM-DD, for --team-worker-summary/--team-worker-history")
+    parser.add_argument("--date-to", default=None, help="YYYY-MM-DD, for --team-worker-summary/--team-worker-history")
+
+    parser.add_argument("--skill-test-all", action="store_true", help="Run the real skill test + 100-point review for all 17 agents")
+    parser.add_argument("--skill-test", default=None, metavar="AGENT_ID", help="Run the skill test for one agent")
+    parser.add_argument("--skill-review-list", action="store_true", help="Show the latest review per agent, weakest first")
+
+    parser.add_argument("--dhansetu-ingest-sheet", action="store_true", help="Read course titles from the founder's Google Sheet. Requires --sheets-credentials, --sheets-id")
+    parser.add_argument("--dhansetu-draft-course", type=int, default=None, metavar="COURSE_ID")
+    parser.add_argument("--dhansetu-write-prompt", type=int, default=None, metavar="COURSE_ID")
+    parser.add_argument("--dhansetu-write-reel", type=int, default=None, metavar="COURSE_ID")
+    parser.add_argument("--dhansetu-schedule-post", type=int, default=None, metavar="CONTENT_ID")
+    parser.add_argument("--dhansetu-list-courses", action="store_true")
+    parser.add_argument("--dhansetu-ready-to-post", action="store_true")
+    parser.add_argument("--course-status", default=None, help="filter for --dhansetu-list-courses")
+    parser.add_argument("--platform", default="instagram", help="for --dhansetu-schedule-post/--dhansetu-ready-to-post")
+    parser.add_argument("--sheet-name", default="Courses", help="tab name for --dhansetu-ingest-sheet")
+
+    parser.add_argument("--pa-refine", default=None, metavar="MESSAGE", help="Turn a raw message into a professional prompt (PA Angella)")
+    parser.add_argument("--pa-send-to-ceo", default=None, metavar="MESSAGE", help="Refine via PA Angella, then send straight to ceo.decide()")
+    parser.add_argument("--pa-voice", default=None, metavar="MESSAGE", help="Refine via PA Angella, then speak the refined prompt back out loud")
+    parser.add_argument("--pa-voice-gender", choices=["male", "female"], default="female", help="Voice for --pa-voice (default: female, matches her persona)")
+
+    parser.add_argument("--dhansetu-add-link", action="store_true", help="Add a link-tree entry. Requires --link-title, --link-url")
+    parser.add_argument("--dhansetu-list-links", action="store_true")
+    parser.add_argument("--link-title", default=None)
+    parser.add_argument("--link-url", default=None)
+    parser.add_argument("--link-order", type=int, default=None)
+
+    parser.add_argument("--discovery-start", action="store_true", help="Stage 1 intake. Requires --discovery-business-name, others optional")
+    parser.add_argument("--discovery-analyze", type=int, default=None, metavar="DISCOVERY_ID", help="Run the 5-category bottleneck analysis on an intake")
+    parser.add_argument("--discovery-list", action="store_true")
+    parser.add_argument("--discovery-status", default=None, choices=["intake", "analyzed"], help="filter for --discovery-list")
+    for _key, _label, _req in onboarding.INTAKE_FIELDS:
+        parser.add_argument(f"--discovery-{_key.replace('_', '-')}", dest=f"discovery_{_key}", default=None, help=_label)
+
+    parser.add_argument("--payu-merchant-key", default=None)
+    parser.add_argument("--payu-merchant-salt", default=None)
     parser.add_argument("--interval", type=int, default=60, help="Seconds between --sentinel-loop collections")
+
+    parser.add_argument("--initiative-add", metavar="TITLE", help="Track a new founder-facing task (Task 1, Task 2, ...)")
+    parser.add_argument("--initiative-artifact-url", default=None, metavar="URL")
+    parser.add_argument("--milestone-add", type=int, default=None, metavar="INITIATIVE_ID")
+    parser.add_argument("--milestone-title", default=None, metavar="TITLE")
+    parser.add_argument("--milestone-done-on-add", action="store_true")
+    parser.add_argument("--milestone-done", type=int, default=None, metavar="MILESTONE_ID")
+    parser.add_argument("--initiative-status", type=int, default=None, metavar="INITIATIVE_ID")
+    parser.add_argument("--initiative-set-status", choices=["running", "paused", "done"], default=None)
+    parser.add_argument("--initiatives-list", action="store_true")
+
+    parser.add_argument("--failure-analysis-add", metavar="JSON_PATH",
+                         help="Record a real 5-Whys failure analysis from a JSON file")
+    parser.add_argument("--failure-analyses-list", action="store_true")
+    parser.add_argument("--failure-status", default=None, choices=["open", "closed"],
+                         help="Filter for --failure-analyses-list")
+
+    parser.add_argument("--chat-message", metavar="MESSAGE", help="Pre-sales chat widget: one message, one reply, clean JSON")
+    parser.add_argument("--chat-agent", default="sales", help="Agent id to answer --chat-message (default: sales)")
+
+    parser.add_argument("--peopledesk-add-staff", action="store_true")
+    parser.add_argument("--peopledesk-list-staff", action="store_true")
+    parser.add_argument("--peopledesk-mark-attendance", action="store_true")
+    parser.add_argument("--peopledesk-payroll", action="store_true")
+    parser.add_argument("--owner-email", default=None, help="PeopleDesk: which small business's data (email is the identity)")
+    parser.add_argument("--staff-name", default=None)
+    parser.add_argument("--staff-role", default=None)
+    parser.add_argument("--staff-phone", default=None)
+    parser.add_argument("--staff-pay-type", choices=["daily", "monthly"], default="daily")
+    parser.add_argument("--staff-daily-wage", type=float, default=None)
+    parser.add_argument("--staff-monthly-salary", type=float, default=None)
+    parser.add_argument("--staff-join-date", default=None)
+    parser.add_argument("--staff-status", default="active", choices=["active", "inactive"], help="Filter for --peopledesk-list-staff")
+    parser.add_argument("--staff-id", type=int, default=None)
+    parser.add_argument("--attendance-date", default=None, help="YYYY-MM-DD")
+    parser.add_argument("--attendance-status", choices=["present", "absent", "half_day", "leave"], default=None)
 
     parser.add_argument("--knowledge-add", metavar="TITLE")
     parser.add_argument("--content", default="")
@@ -529,9 +1256,13 @@ def main():
     parser.add_argument("--session-id", default="cli-session")
 
     parser.add_argument("--voice-listen", action="store_true", help="Record from the mic and route the command")
+    parser.add_argument("--voice-loop", action="store_true", help="Continuous wake-word listening (foreground loop, Ctrl+C to stop)")
     parser.add_argument("--seconds", type=float, default=5.0)
+    parser.add_argument("--window-seconds", type=float, default=4.0, help="Recording window size for --voice-loop")
     parser.add_argument("--owner-passphrase", default=None, help="Manual entry — not stored anywhere")
     parser.add_argument("--voice-history", nargs="?", const=10, type=int, metavar="LIMIT", help="Print recent voice command history")
+    parser.add_argument("--voice-gender", choices=["male", "female"], default="male", help="Which spoken voice answers back (Daniel/Samantha)")
+    parser.add_argument("--voice-mute", action="store_true", help="Don't speak the response out loud, text only")
 
     parser.add_argument("--website-templates", action="store_true", help="List the 7 registered site types")
     parser.add_argument("--website-build", metavar="SITE_TYPE", help="Run the full pipeline: CEO -> Requirements -> Build -> QA -> Security -> Package")
@@ -635,7 +1366,9 @@ def _dispatch(args):
     if args.security_scan:
         return _cmd_security_scan(args.telegram_token, args.telegram_chat_id, args.sheets_credentials, args.sheets_id)
     if args.website_audit:
-        return _cmd_website_audit(args.website_audit, args.telegram_token, args.telegram_chat_id, args.sheets_credentials, args.sheets_id)
+        return _cmd_website_audit(args.website_audit, args.telegram_token, args.telegram_chat_id, args.sheets_credentials, args.sheets_id,
+                                   amount=args.razorpay_amount, razorpay_key_id=args.razorpay_key_id, razorpay_key_secret=args.razorpay_key_secret,
+                                   customer_name=args.customer_name, customer_contact=args.customer_contact)
     if args.correct:
         if not args.content_file:
             print("--correct requires --content-file PATH")
@@ -644,6 +1377,231 @@ def _dispatch(args):
                              args.telegram_chat_id, args.sheets_credentials, args.sheets_id)
     if args.correction_history is not None:
         return _cmd_correction_history(args.correction_history)
+    if args.create_payment_link:
+        if not (args.razorpay_key_id and args.razorpay_key_secret and args.razorpay_amount and args.description):
+            print("--create-payment-link requires --razorpay-key-id, --razorpay-key-secret, --razorpay-amount, --description")
+            return
+        return _cmd_create_payment_link(args.razorpay_key_id, args.razorpay_key_secret, args.razorpay_amount,
+                                         args.description, args.customer_name, args.customer_contact, args.reference_id)
+    if args.check_payment:
+        if not (args.razorpay_key_id and args.razorpay_key_secret):
+            print("--check-payment requires --razorpay-key-id and --razorpay-key-secret")
+            return
+        return _cmd_check_payment(args.razorpay_key_id, args.razorpay_key_secret, args.check_payment)
+    if args.payment_links:
+        return _cmd_payment_links(args.status, 50)
+    if args.website_review:
+        return _cmd_website_review(args.website_review, args.business, args.telegram_token, args.telegram_chat_id)
+    if args.stripe_checkout:
+        if not (args.stripe_secret_key and args.razorpay_amount and args.description and args.success_url and args.cancel_url):
+            print("--stripe-checkout requires --stripe-secret-key, --razorpay-amount, --description, --success-url, --cancel-url")
+            return
+        return _cmd_stripe_checkout(args.stripe_secret_key, args.razorpay_amount, args.stripe_currency,
+                                     args.description, args.success_url, args.cancel_url)
+    if args.upi_link:
+        if not (args.upi_vpa and args.razorpay_amount):
+            print("--upi-link requires --upi-vpa and --razorpay-amount")
+            return
+        return _cmd_upi_link(args.upi_vpa, args.customer_name or "Shakthi", args.razorpay_amount, args.note)
+    if args.gateway_status:
+        return _cmd_gateway_status(args.razorpay_key_id, args.razorpay_key_secret, args.stripe_secret_key, args.upi_vpa,
+                                    args.payu_merchant_key, args.payu_merchant_salt)
+    if args.create_subscription_plan:
+        if not (args.razorpay_key_id and args.razorpay_key_secret and args.razorpay_amount and args.plan_name):
+            print("--create-subscription-plan requires --razorpay-key-id, --razorpay-key-secret, --razorpay-amount, --plan-name")
+            return
+        return _cmd_create_subscription_plan(args.razorpay_key_id, args.razorpay_key_secret, args.razorpay_amount,
+                                              args.plan_name, args.sub_interval, args.sub_period)
+    if args.create_subscription:
+        if not (args.razorpay_key_id and args.razorpay_key_secret and args.plan_id):
+            print("--create-subscription requires --razorpay-key-id, --razorpay-key-secret, --plan-id")
+            return
+        return _cmd_create_subscription(args.razorpay_key_id, args.razorpay_key_secret, args.plan_id, args.total_count)
+    if args.prompt_render:
+        if not (args.prompt_role and args.prompt_task):
+            print("--prompt-render requires --prompt-role and --prompt-task")
+            return
+        return _cmd_prompt_render(args.prompt_target, args.prompt_role, args.prompt_task, args.prompt_output_format)
+    if args.prompt_lint:
+        return _cmd_prompt_lint(args.prompt_lint)
+    if args.worker_enqueue:
+        return _cmd_worker_enqueue(args.worker_enqueue, args.payload_json, args.queue_priority)
+    if args.worker_drain:
+        return _cmd_worker_drain(args.max_workers, args.telegram_token, args.telegram_chat_id)
+    if args.worker_daemon:
+        return _cmd_worker_daemon(args.interval, args.telegram_token, args.telegram_chat_id)
+    if args.worker_status:
+        return _cmd_worker_status()
+    if args.pdf_process:
+        if not args.pdf_output:
+            print("--pdf-process requires --pdf-output")
+            return
+        return _cmd_pdf_process(args.pdf_process, args.pdf_input, args.pdf_output, args.pdf_password,
+                                 args.pdf_degrees, args.pdf_pages)
+    if args.incident_create:
+        if not args.description:
+            print("--incident-create requires --description")
+            return
+        return _cmd_incident_create(args.incident_create, args.description, args.telegram_token, args.telegram_chat_id)
+    if args.incident_transition:
+        if not args.to_status:
+            print("--incident-transition requires --to-status")
+            return
+        return _cmd_incident_transition(args.incident_transition, args.to_status, args.note)
+    if args.incident_resolve:
+        return _cmd_incident_resolve(args.incident_resolve, args.root_cause, args.fix)
+    if args.incident_close:
+        return _cmd_incident_close(args.incident_close)
+    if args.incident_list:
+        return _cmd_incident_list(args.status)
+    if args.incident_sweep:
+        return _cmd_incident_sweep(args.website_urls, args.telegram_token, args.telegram_chat_id)
+    if args.subscribe:
+        if not (args.email and args.product and args.gateway):
+            print("--subscribe requires --email, --product, --gateway")
+            return
+        return _cmd_subscribe(args.email, args.product, args.gateway, args.razorpay_key_id, args.razorpay_key_secret,
+                               args.payu_merchant_key, args.payu_merchant_salt, args.success_url, args.failure_url)
+    if args.pricing_check:
+        if not (args.email and args.product):
+            print(json.dumps({"error": "--pricing-check requires --email and --product"}))
+            return
+        return _cmd_pricing_check(args.email, args.product)
+    if args.pricing_record_usage:
+        if not (args.email and args.product):
+            print(json.dumps({"error": "--pricing-record-usage requires --email and --product"}))
+            return
+        return _cmd_pricing_record_usage(args.email, args.product)
+    if args.lead_ingest:
+        if not (args.lead_name and args.lead_email and args.lead_source):
+            print(json.dumps({"error": "--lead-ingest requires --lead-name, --lead-email, --lead-source"}))
+            return
+        return _cmd_lead_ingest(args.business, args.lead_name, args.lead_email, args.lead_source,
+                                 args.lead_contact, args.lead_notes, args.telegram_token, args.telegram_chat_id)
+    if args.lead_score is not None:
+        return _cmd_lead_score(args.lead_score)
+    if args.lead_outreach is not None:
+        return _cmd_lead_outreach(args.lead_outreach)
+    if args.lead_proposal is not None:
+        return _cmd_lead_proposal(args.lead_proposal, args.deal_context)
+    if args.lead_list:
+        return _cmd_lead_list(args.lead_status, args.lead_owner)
+    if args.marketing_generate:
+        if not (args.content_type and args.marketing_target and args.brief):
+            print(json.dumps({"error": "--marketing-generate requires --content-type, --marketing-target, --brief"}))
+            return
+        return _cmd_marketing_generate(args.business, args.content_type, args.marketing_target, args.brief, args.count)
+    if args.marketing_send_to_sales is not None:
+        return _cmd_marketing_send_to_sales(args.marketing_send_to_sales, args.lead_id)
+    if args.content_list:
+        return _cmd_content_list(args.content_type, args.content_status)
+    if args.team_add_worker:
+        if not args.worker_name:
+            print(json.dumps({"error": "--team-add-worker requires --worker-name"}))
+            return
+        return _cmd_team_add_worker(args.business, args.worker_name, args.worker_role, args.worker_contact)
+    if args.team_list_workers:
+        return _cmd_team_list_workers(args.business, args.team_status)
+    if args.team_log_day:
+        if not (args.worker_id and args.work_date):
+            print(json.dumps({"error": "--team-log-day requires --worker-id and --work-date"}))
+            return
+        return _cmd_team_log_day(args.worker_id, args.work_date, args.present, args.hours,
+                                   args.work_assigned, args.work_done, args.notes)
+    if args.team_day_summary:
+        return _cmd_team_day_summary(args.team_day_summary, args.business)
+    if args.team_worker_summary is not None:
+        return _cmd_team_worker_summary(args.team_worker_summary, args.date_from, args.date_to)
+    if args.team_worker_history is not None:
+        return _cmd_team_worker_history(args.team_worker_history, args.date_from, args.date_to)
+    if args.skill_test_all:
+        return _cmd_skill_test_all()
+    if args.skill_test:
+        return _cmd_skill_test_one(args.skill_test)
+    if args.skill_review_list:
+        return _cmd_skill_review_list()
+    if args.dhansetu_ingest_sheet:
+        if not (args.sheets_credentials and args.sheets_id):
+            print(json.dumps({"error": "--dhansetu-ingest-sheet requires --sheets-credentials and --sheets-id"}))
+            return
+        return _cmd_dhansetu_ingest_sheet(args.business, args.sheets_credentials, args.sheets_id, args.sheet_name)
+    if args.dhansetu_draft_course is not None:
+        return _cmd_dhansetu_draft_course(args.dhansetu_draft_course)
+    if args.dhansetu_write_prompt is not None:
+        return _cmd_dhansetu_write_prompt(args.dhansetu_write_prompt, args.brief)
+    if args.dhansetu_write_reel is not None:
+        return _cmd_dhansetu_write_reel(args.dhansetu_write_reel, args.brief)
+    if args.dhansetu_schedule_post is not None:
+        return _cmd_dhansetu_schedule_post(args.dhansetu_schedule_post, args.platform)
+    if args.dhansetu_list_courses:
+        return _cmd_dhansetu_list_courses(args.business, args.course_status)
+    if args.dhansetu_ready_to_post:
+        return _cmd_dhansetu_ready_to_post(args.platform)
+    if args.pa_refine:
+        return _cmd_pa_refine(args.pa_refine, args.business)
+    if args.pa_send_to_ceo:
+        return _cmd_pa_send_to_ceo(args.pa_send_to_ceo, args.business)
+    if args.pa_voice:
+        return _cmd_pa_voice(args.pa_voice, args.business, args.pa_voice_gender)
+    if args.dhansetu_add_link:
+        if not (args.link_title and args.link_url):
+            print(json.dumps({"error": "--dhansetu-add-link requires --link-title and --link-url"}))
+            return
+        return _cmd_dhansetu_add_link(args.business, args.link_title, args.link_url, args.link_order)
+    if args.dhansetu_list_links:
+        return _cmd_dhansetu_list_links(args.business)
+    if args.discovery_start:
+        return _cmd_discovery_start(args)
+    if args.discovery_analyze is not None:
+        return _cmd_discovery_analyze(args.discovery_analyze)
+    if args.discovery_list:
+        return _cmd_discovery_list(args.discovery_status)
+    if args.initiative_add:
+        return _cmd_initiative_add(args.initiative_add, args.initiative_artifact_url)
+    if args.milestone_add is not None:
+        if not args.milestone_title:
+            print(json.dumps({"error": "--milestone-add requires --milestone-title"}))
+            return
+        return _cmd_milestone_add(args.milestone_add, args.milestone_title, args.milestone_done_on_add)
+    if args.milestone_done is not None:
+        return _cmd_milestone_done(args.milestone_done)
+    if args.initiative_status is not None:
+        if not args.initiative_set_status:
+            print(json.dumps({"error": "--initiative-status requires --initiative-set-status"}))
+            return
+        return _cmd_initiative_status(args.initiative_status, args.initiative_set_status)
+    if args.initiatives_list:
+        return _cmd_initiatives_list()
+    if args.failure_analysis_add:
+        return _cmd_failure_analysis_add(args.failure_analysis_add)
+    if args.failure_analyses_list:
+        return _cmd_failure_analyses_list(args.failure_status)
+    if args.chat_message:
+        return _cmd_chat_message(args.chat_agent, args.chat_message)
+
+    if args.peopledesk_add_staff:
+        if not (args.owner_email and args.staff_name):
+            print(json.dumps({"error": "--peopledesk-add-staff requires --owner-email and --staff-name"}))
+            return
+        return _cmd_peopledesk_add_staff(args.owner_email, args.staff_name, args.staff_role, args.staff_phone,
+                                          args.staff_pay_type, args.staff_daily_wage, args.staff_monthly_salary,
+                                          args.staff_join_date)
+    if args.peopledesk_list_staff:
+        if not args.owner_email:
+            print(json.dumps({"error": "--peopledesk-list-staff requires --owner-email"}))
+            return
+        return _cmd_peopledesk_list_staff(args.owner_email, args.staff_status)
+    if args.peopledesk_mark_attendance:
+        if not (args.staff_id and args.attendance_date and args.attendance_status):
+            print(json.dumps({"error": "--peopledesk-mark-attendance requires --staff-id, --attendance-date, --attendance-status"}))
+            return
+        return _cmd_peopledesk_mark_attendance(args.staff_id, args.attendance_date, args.attendance_status)
+    if args.peopledesk_payroll:
+        if not (args.owner_email and args.date_from and args.date_to):
+            print(json.dumps({"error": "--peopledesk-payroll requires --owner-email, --date-from, --date-to"}))
+            return
+        return _cmd_peopledesk_payroll(args.owner_email, args.date_from, args.date_to)
+
     if args.knowledge_add:
         return _cmd_knowledge_add(args.knowledge_category, args.knowledge_add, args.content, args.tags)
     if args.knowledge_ask:
@@ -651,7 +1609,9 @@ def _dispatch(args):
     if args.buddy_chat:
         return _cmd_buddy_chat(args.buddy_chat, args.buddy_mode, args.session_id)
     if args.voice_listen:
-        return _cmd_voice_listen(args.seconds, args.owner_passphrase)
+        return _cmd_voice_listen(args.seconds, args.owner_passphrase, args.voice_gender, args.voice_mute)
+    if args.voice_loop:
+        return _cmd_voice_loop(args.window_seconds, args.owner_passphrase, args.voice_gender, args.voice_mute)
     if args.voice_history is not None:
         return _cmd_voice_history(args.voice_history)
     if args.website_templates:

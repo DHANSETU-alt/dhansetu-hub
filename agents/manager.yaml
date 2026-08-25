@@ -1,5 +1,6 @@
 id: manager
 layer: operations
+squad: "Superpower"
 name: Shakthi Manager
 default_model_tier: local
 local_model: llama3.2

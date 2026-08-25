@@ -31,9 +31,45 @@ requires the founder to grant microphone permission to this process when
 macOS first prompts for it -- not something that can be granted
 programmatically.
 """
+import subprocess
+
 from . import access, bug_fixer, ceo as ceo_mod, db, finance, routing, security
 
 _model = None
+
+# macOS's built-in `say` -- zero new dependency, already proven reliable
+# this session for synthesizing test audio. Both confirmed installed and
+# working live on this machine (`say -v '?'`). Daniel (en_GB) for a calm,
+# measured male voice; Samantha (en_US) is macOS's own warm, natural female
+# voice -- picked for tone, not to imitate any specific fictional character.
+# The wake word stays "Shakthi", this project's own identity, regardless of
+# which voice answers back.
+VOICE_MALE = "Daniel"
+VOICE_FEMALE = "Samantha"
+TTS_VOICE = VOICE_MALE  # backward-compatible default
+
+TTS_VOICES = {"male": VOICE_MALE, "female": VOICE_FEMALE}
+
+
+def resolve_voice(voice: str = None, gender: str = None) -> str:
+    """A caller can pass an exact `say` voice name (voice=...) or just
+    gender=("male"|"female") and get this project's chosen voice for it.
+    Falls back to the male voice if gender is unset or unrecognized."""
+    if voice:
+        return voice
+    return TTS_VOICES.get((gender or "male").lower(), VOICE_MALE)
+
+
+def speak(text: str, voice: str = None, gender: str = None) -> bool:
+    """Best-effort -- a founder on Linux, or a Mac with `say` unavailable
+    for some reason, still gets the text response; speech is additive,
+    never the only way the result reaches them."""
+    resolved = resolve_voice(voice, gender)
+    try:
+        subprocess.run(["say", "-v", resolved, text], timeout=30, check=False)
+        return True
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
 
 
 def _get_model():
@@ -122,12 +158,15 @@ def execute_intent(intent: dict, identity: str) -> str:
     return "Sorry, I didn't understand that command."
 
 
-def listen_and_execute(seconds: float = 5.0, identity_passphrase: str = None) -> dict:
+def listen_and_execute(seconds: float = 5.0, identity_passphrase: str = None, speak_response: bool = True,
+                        voice: str = None, gender: str = None) -> dict:
     audio = record_audio(seconds)
-    return _transcribe_and_execute(audio, identity_passphrase)
+    return _transcribe_and_execute(audio, identity_passphrase, speak_response=speak_response,
+                                    voice=voice, gender=gender)
 
 
-def _transcribe_and_execute(audio, identity_passphrase: str = None) -> dict:
+def _transcribe_and_execute(audio, identity_passphrase: str = None, speak_response: bool = True,
+                             transcription: dict = None, voice: str = None, gender: str = None) -> dict:
     """Voice -> STT -> Intent -> [CEO, if risky] -> Correct Agent -> Response.
 
     CEO sits in the loop only for commands routing.classify_risk() flags
@@ -138,8 +177,14 @@ def _transcribe_and_execute(audio, identity_passphrase: str = None) -> dict:
     "check my finance report" behind that would make voice control
     unusable. The founder's own three example commands are all read-only
     status checks and route straight through, unreviewed, same as before.
+
+    `transcription` lets a caller that already ran transcribe() on this
+    exact audio (listen_loop(), checking for the wake word) pass the
+    result through instead of paying for a second real STT pass on the
+    same clip.
     """
-    transcription = transcribe(audio)
+    if transcription is None:
+        transcription = transcribe(audio)
     identity = access.identify(identity_passphrase)
     intent = detect_intent(transcription["text"])
     denied = not access.allowed(identity, intent["category"])
@@ -172,7 +217,48 @@ def _transcribe_and_execute(audio, identity_passphrase: str = None) -> dict:
             denied_reason=denied_reason, result_summary=result_text,
         )
 
+    if speak_response:
+        speak(result_text, voice=voice, gender=gender)
+
     return {
         "transcript": transcription["text"], "language": transcription["language"],
         "identity": identity, "intent": intent, "ceo_status": ceo_status, "result": result_text,
     }
+
+
+def _contains_wake_word(text: str) -> bool:
+    lowered = text.lower()
+    return any(v in lowered for v in WAKE_WORD_VARIANTS)
+
+
+def listen_loop(window_seconds: float = 4.0, identity_passphrase: str = None, announce: bool = True,
+                 voice: str = None, gender: str = None):
+    """Continuous mode -- the actual 'always listening' behavior a Jarvis-
+    style assistant needs, not a one-shot 5-second recording. Records
+    short windows back to back, forever; a window that doesn't contain the
+    wake word is silently discarded (not logged, not spoken to) so this
+    doesn't react to background conversation. Foreground loop, Ctrl+C to
+    stop -- same pattern as --sentinel-loop/--worker-daemon.
+
+    Honest limitation, stated plainly: this is continuous polling with a
+    real STT model on every window, not a dedicated low-power wake-word
+    engine (Porcupine, openWakeWord, etc.) -- it costs real CPU the whole
+    time it runs, and there's an up-to-window_seconds delay between you
+    speaking and it noticing, not instant. A true low-latency, low-power
+    wake word would need a purpose-built wake-word model this project
+    doesn't have; this is the honest version of 'always listening' that's
+    actually buildable with what's here.
+    """
+    print(f"Voice Commander: listening in {window_seconds:.0f}s windows (Ctrl+C to stop)...")
+    if announce:
+        speak("Shakthi voice commander online.", voice=voice, gender=gender)
+    while True:
+        audio = record_audio(window_seconds)
+        transcription = transcribe(audio)
+        text = transcription["text"].strip()
+        if not text or not _contains_wake_word(text):
+            continue
+        print(f"[heard] {text}")
+        result = _transcribe_and_execute(audio, identity_passphrase, speak_response=True,
+                                          transcription=transcription, voice=voice, gender=gender)
+        print(f"[{result['identity']}] {result['result']}")

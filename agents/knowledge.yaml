@@ -1,5 +1,6 @@
 id: knowledge
 layer: operations
+squad: "GStack"
 name: Shakthi Knowledge
 default_model_tier: local
 local_model: llama3.2

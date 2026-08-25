@@ -1,5 +1,6 @@
 id: customer_success
 layer: business
+squad: "Get Shit Done"
 name: Shakthi Customer Success
 default_model_tier: local
 local_model: llama3.2

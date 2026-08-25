@@ -2,23 +2,33 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { AngellaPresence } from "@/components/AngellaPresence";
+import type { PaAngellaStatus } from "@/lib/api";
 
 type NavItem = { href: string; label: string; soon?: boolean };
 
 const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: "Overview",
-    items: [{ href: "/", label: "Executive Dashboard" }],
+    items: [
+      { href: "/", label: "Executive Dashboard" },
+      { href: "/initiatives", label: "Founder Tasks" },
+      { href: "/mission-control", label: "Mission Control" },
+    ],
   },
   {
     group: "Governance",
     items: [
       { href: "/ceo", label: "CEO Dashboard" },
       { href: "/finance", label: "Finance Dashboard" },
+      { href: "/payments", label: "Payments" },
       { href: "/security", label: "Security Dashboard" },
       { href: "/bugs", label: "Bug Dashboard" },
+      { href: "/ert", label: "ERT Command Center" },
       { href: "/audits", label: "Audit History" },
       { href: "/correction", label: "Correction Bot" },
+      { href: "/failure-analyses", label: "Failure Analysis Engine" },
+      { href: "/chrome-developer", label: "Chrome Developer" },
     ],
   },
   {
@@ -29,6 +39,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { href: "/voice", label: "Voice Commander" },
       { href: "/costs", label: "Cost Ledger" },
       { href: "/tasks", label: "Task Pipeline" },
+      { href: "/workers", label: "Worker Pool" },
       { href: "/agent-health", label: "Agent Health Monitor", soon: true },
     ],
   },
@@ -45,18 +56,22 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { href: "/businesses", label: "Workspace Manager", soon: true },
       { href: "/website-builder", label: "Website Builder" },
       { href: "/websites", label: "Website Monitoring" },
+      { href: "/pdf-studio", label: "Dhansetu PDF Studio" },
+      { href: "/peopledesk", label: "Dhansetu PeopleDesk" },
+      { href: "/dhansetu-ai", label: "Dhansetu AI" },
     ],
   },
 ];
 
-export function Sidebar() {
+export function Sidebar({ angellaStatus }: { angellaStatus?: PaAngellaStatus | null }) {
   const pathname = usePathname();
   return (
-    <nav className="glass w-60 shrink-0 border-r-0 h-screen sticky top-0 overflow-y-auto">
+    <nav className="glass w-60 shrink-0 border-r-0 h-screen sticky top-0 overflow-y-auto relative z-20">
       <div className="px-4 py-5 border-b border-[var(--border)]">
         <div className="text-sm font-semibold tracking-tight">SHAKTHI AI OS</div>
         <div className="text-[11px] text-[var(--muted-foreground)] mt-0.5">Founder Control Center</div>
       </div>
+      <AngellaPresence status={angellaStatus ?? null} />
       <div className="py-3">
         {NAV.map((section) => (
           <div key={section.group} className="mb-3">

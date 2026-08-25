@@ -23,7 +23,14 @@ CREATE TABLE IF NOT EXISTS agents (
                                                -- tools live in a Python dict, not a
                                                -- table, so a join buys no referential
                                                -- integrity, just sync overhead.
-  role_prompt TEXT NOT NULL
+  role_prompt TEXT NOT NULL,
+  squad TEXT                                  -- founder-assigned team grouping, purely
+                                               -- organizational -- does not affect routing.
+                                               -- Only present on a fresh DB; the existing
+                                               -- live DB gets it via the ALTER TABLE
+                                               -- migration in db.init_db() (CREATE TABLE
+                                               -- IF NOT EXISTS won't add a column to a
+                                               -- table that already exists).
 );
 
 CREATE TABLE IF NOT EXISTS sites (
@@ -377,4 +384,419 @@ CREATE TABLE IF NOT EXISTS correction_findings (
   description TEXT NOT NULL,
   auto_fixed INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Operation First Revenue -- Offer A payment collection. Razorpay Payment
+-- Links only (no webhook receiver -- this system is localhost-only by
+-- design, see README "Security gaps"; status is checked on demand via the
+-- Payment Links fetch API, not pushed to us). Key ID / Key Secret are
+-- NEVER stored -- same manual-entry-every-invocation rule as Telegram and
+-- Google Sheets credentials. See orchestrator/payments.py.
+CREATE TABLE IF NOT EXISTS payment_links (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  razorpay_link_id TEXT NOT NULL UNIQUE,
+  short_url TEXT NOT NULL,
+  amount_inr REAL NOT NULL,
+  description TEXT NOT NULL,
+  customer_name TEXT,
+  customer_contact TEXT,
+  reference_id TEXT,          -- e.g. "web-audit:dhansetuhub.in"
+  status TEXT NOT NULL DEFAULT 'created',   -- created | partially_paid | paid | cancelled | expired
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  last_checked_at TEXT
+);
+
+-- SHAKTHI Chrome Developer Bot -- website review pipeline (real
+-- browser-driven checks via Playwright, not just urllib). seo_score and
+-- conversion_score are new metrics distinct from WEB-001's Website
+-- Health/Security/Performance scores -- see orchestrator/chrome_developer.py.
+CREATE TABLE IF NOT EXISTS website_reviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  url TEXT NOT NULL,
+  business_id INTEGER REFERENCES businesses(id),
+  status TEXT NOT NULL DEFAULT 'running',   -- running | completed | failed
+  seo_score INTEGER,
+  conversion_score INTEGER,
+  ui_score INTEGER,
+  deployment_ready INTEGER,                 -- 0/1 -- set by the CEO gate, see chrome_developer.review_website()
+  findings_count INTEGER NOT NULL DEFAULT 0,
+  summary TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  completed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS website_review_findings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  review_id INTEGER NOT NULL REFERENCES website_reviews(id),
+  category TEXT NOT NULL,    -- seo | conversion | performance | console_error | security | mobile
+  severity TEXT NOT NULL,    -- P0-P4
+  description TEXT NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- payment_gateway_manager.py's generic ledger for Stripe/Subscriptions/UPI
+-- -- Razorpay Payment Links keep using the existing payment_links table
+-- (payments.py) untouched; this covers the 3 new methods this table
+-- didn't originally shape for.
+CREATE TABLE IF NOT EXISTS payment_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  gateway TEXT NOT NULL,       -- razorpay_subscription | stripe_checkout | upi
+  gateway_ref TEXT,            -- the gateway's own id -- NULL for UPI (no account/API involved)
+  amount REAL,
+  currency TEXT NOT NULL DEFAULT 'INR',
+  description TEXT NOT NULL,
+  customer_name TEXT,
+  customer_contact TEXT,
+  status TEXT NOT NULL DEFAULT 'created',   -- created | paid | failed | cancelled
+  business_id INTEGER REFERENCES businesses(id),
+  url_or_link TEXT,             -- checkout URL / UPI deep link
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- SHAKTHI Worker Pool -- execution/concurrency layer, NOT a decision-
+-- maker. Workers never call ceo.decide() themselves and never approve/
+-- reject anything; they just run an existing module's already-built
+-- function (chrome_developer.review_website, security.security_posture_
+-- scan, sentinel.collect_health, ...) and report the result back. See
+-- orchestrator/worker_pool.py, load_manager.py, worker_registry.py.
+CREATE TABLE IF NOT EXISTS workers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  worker_type TEXT NOT NULL,      -- rapid | engineering | infra
+  status TEXT NOT NULL DEFAULT 'idle',   -- idle | busy | failed
+  concurrency_limit INTEGER NOT NULL,
+  tasks_completed INTEGER NOT NULL DEFAULT 0,
+  tasks_failed INTEGER NOT NULL DEFAULT 0,
+  last_active_at TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS work_queue (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,             -- see worker_registry.TASK_KINDS
+  payload TEXT NOT NULL DEFAULT '{}',   -- JSON kwargs for the target function
+  priority INTEGER NOT NULL DEFAULT 5,  -- lower = higher priority
+  status TEXT NOT NULL DEFAULT 'queued',  -- queued | running | done | failed
+  assigned_worker_type TEXT,
+  assigned_worker_id INTEGER REFERENCES workers(id),
+  result TEXT,                    -- JSON, set on success
+  error TEXT,                     -- set on failure
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  started_at TEXT,
+  completed_at TEXT
+);
+
+-- Emergency Response Team (ERT) -- incident tracking. incident_number is
+-- the human-facing "INC-2026-001" id; `id` is the normal autoincrement PK
+-- everything else in this schema uses. See orchestrator/incident_manager.py,
+-- incident_registry.py (ownership matrix), incident_scheduler.py
+-- (automatic detection), incident_audit.py (postmortems).
+CREATE TABLE IF NOT EXISTS incidents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  incident_number TEXT NOT NULL UNIQUE,   -- INC-2026-001
+  incident_type TEXT NOT NULL,            -- see incident_registry.OWNERSHIP_MATRIX keys
+  severity TEXT NOT NULL,                 -- P0 | P1 | P2 | P3
+  owner TEXT NOT NULL,
+  support_team TEXT NOT NULL DEFAULT '[]',  -- JSON list
+  status TEXT NOT NULL DEFAULT 'NEW',
+    -- NEW | ACKNOWLEDGED | INVESTIGATING | FIXING | VERIFYING |
+    -- READY_TO_DEPLOY | RESOLVED | CLOSED
+  description TEXT NOT NULL,
+  root_cause TEXT,
+  fix_applied TEXT,
+  detected_by TEXT NOT NULL DEFAULT 'manual',  -- 'manual' | 'incident_scheduler'
+  recovery_action TEXT,
+  recovery_result TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  acknowledged_at TEXT,
+  resolved_at TEXT,
+  closed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS incident_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  incident_id INTEGER NOT NULL REFERENCES incidents(id),
+  event_type TEXT NOT NULL,   -- state_change | note | recovery_attempt | notification
+  detail TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Pricing/usage gating -- pricing.py. product is 'pdf_studio' | 'peopledesk'
+-- (peopledesk has no product to attach to yet; the pricing config exists
+-- so it's ready the moment it does). email is the only identity concept
+-- this project has for paying customers -- no login system, no accounts.
+CREATE TABLE IF NOT EXISTS product_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL,
+  product TEXT NOT NULL,
+  use_count INTEGER NOT NULL DEFAULT 0,
+  first_used_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  last_used_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(email, product)
+);
+
+CREATE TABLE IF NOT EXISTS product_subscriptions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL,
+  product TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',   -- pending | active | expired | cancelled
+  valid_until TEXT,
+  amount_inr REAL NOT NULL,
+  gateway TEXT NOT NULL,          -- razorpay | payu
+  gateway_ref TEXT,               -- payment link id / PayU txnid
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Sales agent activation. A lead is the real trigger every sales.py
+-- function hangs off of -- ingest_lead() is the "new lead / inbound / CRM
+-- event" entry point the founder's spec asked for. owner flips from
+-- 'sales' to 'founder' the moment negotiation intent crosses the
+-- escalation threshold (see sales.py:flag_for_founder).
+CREATE TABLE IF NOT EXISTS leads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  business_id INTEGER REFERENCES businesses(id),
+  name TEXT,
+  email TEXT,
+  contact TEXT,
+  source TEXT NOT NULL,             -- website_form | referral | cold_list | inbound_email | marketing | ...
+  status TEXT NOT NULL DEFAULT 'new',   -- new | scored | contacted | negotiating | won | lost
+  score REAL,                       -- fit/urgency, 0.00-1.00, from sales.score_lead()
+  score_reason TEXT,
+  last_contact_at TEXT,
+  next_action TEXT,
+  owner TEXT NOT NULL DEFAULT 'sales',  -- 'sales' | 'founder'
+  notes TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Audit trail per lead, same task_events pattern as everything else in
+-- this project -- and task_id ties each event back to the real sales-agent
+-- `tasks` row that produced it, so "0 tasks ever routed to sales" is
+-- falsifiable by construction going forward, not just claimed fixed.
+CREATE TABLE IF NOT EXISTS lead_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_id INTEGER NOT NULL REFERENCES leads(id),
+  event_type TEXT NOT NULL,   -- scored | outreach_drafted | proposal_drafted | escalated | status_change
+  payload TEXT,
+  task_id INTEGER REFERENCES tasks(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Marketing agent's output queue -- top-of-funnel drafts (LinkedIn posts,
+-- landing copy variants, cold email sequences, ad angles). marketing.py
+-- writes here; marketing.send_to_sales() is the wired hand-off that moves
+-- a variant from here into a real sales.py task.
+CREATE TABLE IF NOT EXISTS content_queue (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  business_id INTEGER REFERENCES businesses(id),
+  content_type TEXT NOT NULL,   -- linkedin_post | twitter_thread | landing_copy | cold_email | ad_angle |
+                                 -- reel_script | visual_prompt | instagram_post (Dhansetu AI additions)
+  variant_label TEXT,           -- 'A' / 'B' / 'C' for A/B/C variants of the same brief
+  target TEXT,                  -- what this was written for, e.g. 'core_offer'
+  content TEXT NOT NULL,
+  icp_fit_score REAL,
+  status TEXT NOT NULL DEFAULT 'draft',   -- draft | sent_to_sales | ready_to_post | used | archived
+  platform TEXT,                -- 'instagram' | NULL -- only Dhansetu AI sets this; marketing.py
+                                 -- never touches it, existing rows/behavior unaffected
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Daily team work register -- a real human team of expert engineers/staff
+-- (not AI agents, not the AI Worker Pool's thread pools in the `workers`
+-- table above -- same word, unrelated concept), not wage laborers -- that
+-- was the founder's own example, not the real composition of the team.
+-- One row per team member per day, same as a daily standup/work log. No
+-- pay tracking -- explicitly out of scope per the founder's own answer
+-- (work assigned/done, attendance, hours only).
+CREATE TABLE IF NOT EXISTS team_members (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  business_id INTEGER REFERENCES businesses(id),
+  name TEXT NOT NULL,
+  role TEXT,                     -- free text, e.g. 'backend engineer', 'ML engineer', 'DevOps'
+  contact TEXT,
+  status TEXT NOT NULL DEFAULT 'active',   -- active | inactive
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS daily_work_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_id INTEGER NOT NULL REFERENCES team_members(id),
+  business_id INTEGER REFERENCES businesses(id),
+  work_date TEXT NOT NULL,       -- 'YYYY-MM-DD'
+  present INTEGER NOT NULL DEFAULT 1,   -- 0/1 -- SQLite has no native boolean
+  hours_worked REAL,
+  work_assigned TEXT,
+  work_done TEXT,
+  notes TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(worker_id, work_date)   -- one real entry per worker per day, enforced -- not just a convention
+);
+
+-- Agent skill test / 100-point review -- orchestrator/skill_test.py. Each
+-- agent gets one real test task grounded in its own role_prompt, run
+-- through the real routing.run_task() pipeline (a real `tasks` row, not a
+-- side-channel call), then graded on 3 dimensions (25 pts each) by a
+-- separate reviewer call, plus a 4th dimension (25 pts) from real
+-- production task history when the agent has any. Honest limitation
+-- stated in code, not hidden: the reviewer is the same tier of local
+-- model being tested (no cloud key is set this session by design), so
+-- this is a real but limited signal, not an authoritative assessment.
+CREATE TABLE IF NOT EXISTS skill_reviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id TEXT NOT NULL REFERENCES agents(id),
+  test_goal TEXT NOT NULL,
+  response TEXT NOT NULL,
+  relevance_score INTEGER,
+  guardrails_score INTEGER,
+  clarity_score INTEGER,
+  history_score INTEGER,
+  has_history INTEGER NOT NULL DEFAULT 0,
+  total_score INTEGER NOT NULL,
+  deterministic_check TEXT,      -- JSON: {"name": ..., "passed": bool} for the handful of
+                                  -- agents with an objectively-checkable right answer
+  possible_fabrication INTEGER NOT NULL DEFAULT 0,   -- regex cross-check: a ₹/$ figure in the
+                                                      -- response that wasn't in the test prompt
+  notes TEXT,
+  task_id INTEGER REFERENCES tasks(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Dhansetu AI -- a deliberately separate course-selling branch, its own
+-- squad, its own agents, own tables -- does not touch marketing.py/sales.py
+-- or their data at all. content_queue.platform (added via migration below,
+-- same reason as agents.squad) is the one shared, purely-additive column;
+-- everything else here is new.
+CREATE TABLE IF NOT EXISTS courses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  business_id INTEGER REFERENCES businesses(id),
+  title TEXT NOT NULL,
+  language TEXT NOT NULL DEFAULT 'gu',    -- Gujarati by default, per the brief
+  outline TEXT,
+  sales_copy TEXT,
+  source TEXT,                            -- 'google_sheet:<spreadsheet_id>' | 'manual'
+  status TEXT NOT NULL DEFAULT 'drafted',   -- drafted | ready | published
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- The Dhansetu AI Instagram bio-link page ("link tree"). Founder adds real
+-- entries via CLI; starts empty on purpose -- no placeholder/fake links
+-- ship by default, the public page below states plainly when it's empty.
+CREATE TABLE IF NOT EXISTS link_tree_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  business_id INTEGER REFERENCES businesses(id),
+  title TEXT NOT NULL,
+  url TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- blackboxOps_OS AI Employee Onboarding -- Stage 1 (Business Discovery)
+-- ONLY. Stages 2-9 of the founder's spec (generating 12 AI employee
+-- types, KPI dashboards, Microsoft-tools automation, knowledge base,
+-- reporting) are explicitly out of scope until Stage 1 is real and
+-- reviewed -- not built silently ahead of that.
+CREATE TABLE IF NOT EXISTS business_discoveries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  business_name TEXT NOT NULL,
+  industry TEXT,
+  website TEXT,
+  business_model TEXT,
+  target_customer TEXT,
+  revenue_streams TEXT,
+  team_size TEXT,
+  monthly_revenue_range TEXT,
+  main_challenges TEXT,
+  preferred_tools TEXT,
+  current_software TEXT,
+  growth_goal_12mo TEXT,
+  revenue_bottlenecks TEXT,
+  operational_bottlenecks TEXT,
+  marketing_bottlenecks TEXT,
+  sales_bottlenecks TEXT,
+  support_bottlenecks TEXT,
+  status TEXT NOT NULL DEFAULT 'intake',   -- intake | analyzed
+  task_id INTEGER REFERENCES tasks(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Founder-facing high-level work tracker: "Task 1", "Task 2", ... --
+-- distinct from the low-level `tasks` table (one row per agent call).
+-- An initiative is a standing piece of real work the founder asked for
+-- (e.g. "the Rs.1 Cr plan"), shown on the dashboard with a real percent-
+-- complete computed from its own milestones -- never a hand-picked
+-- number. Multiple initiatives can be 'running' at once by design (the
+-- founder explicitly asked for prior tasks to keep running alongside
+-- new ones, not get replaced by them).
+CREATE TABLE IF NOT EXISTS initiatives (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  seq INTEGER NOT NULL UNIQUE,             -- Task 1, Task 2, ... shown to the founder
+  title TEXT NOT NULL,
+  artifact_url TEXT,                       -- linked artifact/plan page, if any
+  status TEXT NOT NULL DEFAULT 'running',  -- running | paused | done
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS initiative_milestones (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  initiative_id INTEGER NOT NULL REFERENCES initiatives(id),
+  title TEXT NOT NULL,
+  done INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  done_at TEXT
+);
+
+-- Failure Analysis Engine (Task 4, scoped down from the founder's full
+-- "ANGELLA OMEGA" Six Sigma/DMAIC spec per a real CEO decision -- see
+-- decisions#11: build one high-leverage process, root-cause analysis for
+-- a real recurring failure, not the whole framework at once). A real 5-
+-- Whys record per genuine failure, not a hypothetical template.
+CREATE TABLE IF NOT EXISTS failure_analyses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_type TEXT NOT NULL,               -- bug | task_failure | incident | manual
+  source_id INTEGER,                       -- id in the relevant table, if applicable
+  title TEXT NOT NULL,
+  severity TEXT NOT NULL DEFAULT 'P2',     -- same P0-P4 scale as bugs.severity
+  summary TEXT NOT NULL,
+  five_whys TEXT NOT NULL,                 -- JSON array of strings, why #1 -> #5
+  root_cause TEXT NOT NULL,
+  corrective_action TEXT NOT NULL,         -- what was actually done about it
+  preventive_action TEXT NOT NULL,         -- the poka-yoke: what stops this recurring
+  lessons_learned TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',     -- open | closed (corrective+preventive both applied)
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Dhansetu PeopleDesk (Task 5) -- a real staff/attendance/payroll tool for
+-- local small businesses and small industrial units. Same no-real-auth,
+-- email-is-identity model as PDF Studio (product_subscriptions/
+-- product_usage) -- whoever's browser has that email owns that email's
+-- staff list. Deliberately lean MVP: a directory, daily attendance, and a
+-- deterministic payroll summary computed from real attendance x wage --
+-- not a full HRMS (leave policies, tax, payslips) on day one.
+CREATE TABLE IF NOT EXISTS peopledesk_staff (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_email TEXT NOT NULL,
+  name TEXT NOT NULL,
+  role TEXT,
+  phone TEXT,
+  pay_type TEXT NOT NULL DEFAULT 'daily',   -- daily | monthly
+  daily_wage_inr REAL,                      -- set when pay_type = 'daily'
+  monthly_salary_inr REAL,                  -- set when pay_type = 'monthly'
+  join_date TEXT,
+  status TEXT NOT NULL DEFAULT 'active',    -- active | inactive
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS peopledesk_attendance (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  staff_id INTEGER NOT NULL REFERENCES peopledesk_staff(id),
+  attendance_date TEXT NOT NULL,            -- YYYY-MM-DD
+  status TEXT NOT NULL,                     -- present | absent | half_day | leave
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(staff_id, attendance_date)
 );

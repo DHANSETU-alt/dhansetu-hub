@@ -189,6 +189,130 @@ def check_sentinel(conn, state: dict) -> list:
     return messages
 
 
+def check_payment_failures(conn, state: dict) -> list:
+    """Chrome Developer Bot / Offer A: a Razorpay Payment Link that
+    expired or was cancelled, or any payment_transactions row (Stripe/
+    Subscriptions/UPI) that failed."""
+    links = conn.execute(
+        "SELECT * FROM payment_links WHERE id > ? AND status IN ('cancelled', 'expired') ORDER BY id",
+        (state.get("payment_failures_links_last_id", 0),),
+    ).fetchall()
+    links = [dict(r) for r in links]
+    all_links = conn.execute("SELECT id FROM payment_links ORDER BY id DESC LIMIT 1").fetchone()
+    if all_links:
+        state["payment_failures_links_last_id"] = max(state.get("payment_failures_links_last_id", 0), all_links["id"])
+
+    txns = conn.execute(
+        "SELECT * FROM payment_transactions WHERE id > ? AND status = 'failed' ORDER BY id",
+        (state.get("payment_failures_txn_last_id", 0),),
+    ).fetchall()
+    txns = [dict(r) for r in txns]
+    all_txns = conn.execute("SELECT id FROM payment_transactions ORDER BY id DESC LIMIT 1").fetchone()
+    if all_txns:
+        state["payment_failures_txn_last_id"] = max(state.get("payment_failures_txn_last_id", 0), all_txns["id"])
+
+    return (
+        [f"Payment link #{r['id']} {r['status']}: ₹{r['amount_inr']} — {r['description'][:50]}" for r in links]
+        + [f"{r['gateway']} payment failed: {r['currency']} {r['amount']} — {r['description'][:50]}" for r in txns]
+    )
+
+
+def check_website_errors(conn, state: dict) -> list:
+    """Chrome Developer Bot: P0/P1 findings from a website review --
+    console errors, missing security headers, exposed secrets."""
+    rows = conn.execute(
+        "SELECT * FROM website_review_findings WHERE id > ? AND severity IN ('P0', 'P1') ORDER BY id",
+        (state.get("website_errors_last_id", 0),),
+    ).fetchall()
+    rows = [dict(r) for r in rows]
+    if rows:
+        state["website_errors_last_id"] = max(r["id"] for r in rows)
+    return [f"Review #{r['review_id']} [{r['severity']}/{r['category']}]: {r['description'][:80]}" for r in rows]
+
+
+def check_seo_issues(conn, state: dict) -> list:
+    """Chrome Developer Bot: SEO-category findings from a website review."""
+    rows = conn.execute(
+        "SELECT * FROM website_review_findings WHERE id > ? AND category = 'seo' ORDER BY id",
+        (state.get("seo_issues_last_id", 0),),
+    ).fetchall()
+    rows = [dict(r) for r in rows]
+    if rows:
+        state["seo_issues_last_id"] = max(r["id"] for r in rows)
+    return [f"Review #{r['review_id']} SEO: {r['description'][:80]}" for r in rows]
+
+
+def check_deployment_ready(conn, state: dict) -> list:
+    """Chrome Developer Bot: a website review that completed and got the
+    CEO deployment-ready green light."""
+    rows = conn.execute(
+        "SELECT * FROM website_reviews WHERE id > ? AND status = 'completed' AND deployment_ready = 1 ORDER BY id",
+        (state.get("deployment_ready_last_id", 0),),
+    ).fetchall()
+    rows = [dict(r) for r in rows]
+    all_reviews = conn.execute("SELECT id FROM website_reviews ORDER BY id DESC LIMIT 1").fetchone()
+    if all_reviews:
+        state["deployment_ready_last_id"] = max(state.get("deployment_ready_last_id", 0), all_reviews["id"])
+    return [f"Deployment ready: {r['url']} (SEO {r['seo_score']}, UI {r['ui_score']})" for r in rows]
+
+
+def check_ceo_failures(conn, state: dict) -> list:
+    """CEO Health Monitor's alert path -- a genuinely new CEO task
+    failure since last sweep. Rare after routing.py's fix (ceo is QA-
+    exempt now); this fires for the remaining real case: a `critical`-
+    risk CEO goal that needed cloud escalation and ANTHROPIC_API_KEY
+    isn't set."""
+    rows = conn.execute(
+        "SELECT * FROM tasks WHERE agent_id = 'ceo' AND status = 'failed' AND id > ? ORDER BY id",
+        (state.get("ceo_failures_last_id", 0),),
+    ).fetchall()
+    rows = [dict(r) for r in rows]
+    all_ceo = conn.execute("SELECT id FROM tasks WHERE agent_id = 'ceo' ORDER BY id DESC LIMIT 1").fetchone()
+    if all_ceo:
+        state["ceo_failures_last_id"] = max(state.get("ceo_failures_last_id", 0), all_ceo["id"])
+    return [f"CEO task #{r['id']} failed: {r['goal'][:70]} — {(r['result'] or '')[:80]}" for r in rows]
+
+
+def check_worker_pool_failures(conn, state: dict) -> list:
+    """Worker Pool: a queued task that failed during dispatch."""
+    rows = conn.execute(
+        "SELECT * FROM work_queue WHERE id > ? AND status = 'failed' ORDER BY id",
+        (state.get("worker_failures_last_id", 0),),
+    ).fetchall()
+    rows = [dict(r) for r in rows]
+    if rows:
+        state["worker_failures_last_id"] = max(r["id"] for r in rows)
+    return [f"Worker task #{r['id']} [{r['kind']}] failed: {(r['error'] or '')[:80]}" for r in rows]
+
+
+def check_queue_overflow(conn, state: dict) -> list:
+    """Worker Pool: queue depth over the hard ceiling right now -- a
+    point-in-time check (not cursor-based like the others), since
+    overflow is a current-state condition, not a discrete event."""
+    from . import config
+    depth = db.queue_depth(conn, status="queued")
+    if depth > config.WORKER_QUEUE_MAX_SIZE:
+        return [f"Queue overflow: {depth} tasks queued, over the {config.WORKER_QUEUE_MAX_SIZE} limit"]
+    return []
+
+
+def check_worker_critical_resource(conn, state: dict) -> list:
+    """Worker Pool: system genuinely under load AND the queue is
+    overflowing at the same time -- a compound signal specific to worker
+    load, distinct from check_sentinel's generic high-CPU/RAM alert
+    (which fires on either condition alone, regardless of the queue)."""
+    from . import config, sentinel
+    depth = db.queue_depth(conn, status="queued")
+    if depth <= config.WORKER_QUEUE_MAX_SIZE:
+        return []
+    snap = db.latest_health_snapshot(conn)
+    if not snap:
+        return []
+    if (snap["cpu_percent"] or 0) > 85 and (snap["ram_percent"] or 0) > 85:
+        return [f"Critical resource usage under worker load: CPU {snap['cpu_percent']}% RAM {snap['ram_percent']}%, queue depth {depth}"]
+    return []
+
+
 CHECKS = {
     "revenue": check_revenue,
     "security": check_security,
@@ -200,6 +324,14 @@ CHECKS = {
     "fix_completed": check_fix_completed,
     "sentinel": check_sentinel,
     "voice_denied": check_voice_denied,
+    "payment_failures": check_payment_failures,
+    "website_errors": check_website_errors,
+    "seo_issues": check_seo_issues,
+    "deployment_ready": check_deployment_ready,
+    "ceo_failures": check_ceo_failures,
+    "worker_pool_failures": check_worker_pool_failures,
+    "queue_overflow": check_queue_overflow,
+    "worker_critical_resource": check_worker_critical_resource,
 }
 
 

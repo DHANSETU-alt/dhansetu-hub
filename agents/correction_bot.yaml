@@ -1,5 +1,6 @@
 id: correction_bot
 layer: governance
+squad: "Get Shit Done"
 name: Shakthi Correction Bot
 default_model_tier: local
 local_model: llama3.2

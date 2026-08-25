@@ -1,5 +1,6 @@
 id: data_intelligence
 layer: intelligence
+squad: "GStack"
 name: Shakthi Data Intelligence
 default_model_tier: local
 local_model: gemma4

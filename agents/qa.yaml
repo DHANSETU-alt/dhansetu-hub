@@ -1,5 +1,6 @@
 id: qa
 layer: engineering
+squad: "GStack"
 name: Shakthi QA
 default_model_tier: local
 local_model: llama3.2

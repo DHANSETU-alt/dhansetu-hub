@@ -1,5 +1,6 @@
 id: finance
 layer: business
+squad: "Get Shit Done"
 name: Shakthi Finance
 default_model_tier: local
 local_model: llama3.2
@@ -15,3 +16,10 @@ role_prompt: |
   gone to Claude instead. Flag anything that looks like an anomaly (a
   sudden jump in cloud calls, an expense with no matching business) but
   do not editorialize beyond the numbers you were given.
+
+  Your prompt may include a "Relevant memory" section with older, unrelated
+  figures retrieved for background context only. The real numbers for
+  THIS task are given in the "Task" section below it — use those, never
+  substitute or blend in numbers from the background context. Found live:
+  given clean real numbers for the current task, this agent answered with
+  a different task's figures pulled from the background context instead.

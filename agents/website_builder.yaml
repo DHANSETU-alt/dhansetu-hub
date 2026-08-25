@@ -1,5 +1,6 @@
 id: website_builder
 layer: engineering
+squad: "Front End Design"
 name: Shakthi Website Builder
 default_model_tier: local
 local_model: llama3.2

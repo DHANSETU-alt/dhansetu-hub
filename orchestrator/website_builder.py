@@ -255,4 +255,15 @@ def run_full_pipeline(business_id: int, site_type: str, founder_request: str) ->
     except Exception:
         pass
 
+    # Chrome Developer Bot runs automatically after every packaged site
+    # too -- a real browser-driven review (SEO/UI/conversion) on top of
+    # Correction Bot's content review above. Same non-blocking pattern:
+    # a failure here (e.g. `node` unavailable) never fails the build.
+    from . import chrome_developer
+    try:
+        file_url = f"file://{build_result['local_path']}"
+        chrome_developer.review_website(file_url, business_id=business_id)
+    except Exception:
+        pass
+
     return {"project_id": project_id, "stage": "packaged", "ok": True, "detail": package_result}

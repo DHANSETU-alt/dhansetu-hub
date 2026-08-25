@@ -57,6 +57,60 @@ def ceo_decisions(qs):
         return {"decisions": db.recent_decisions(conn, limit=_qs_int(qs, "limit") or 20)}
 
 
+@route("/api/ceo/health")
+def ceo_health(qs):
+    from . import ceo_health_monitor
+    with db.get_conn() as conn:
+        return ceo_health_monitor.ceo_status(conn)
+
+
+@route("/api/incidents")
+def incidents_list(qs):
+    from . import incident_manager
+    status = qs.get("status", [None])[0]
+    severity = qs.get("severity", [None])[0]
+    with db.get_conn() as conn:
+        rows = db.list_incidents(conn, status=status, severity=severity, limit=_qs_int(qs, "limit") or 100)
+        mttr = incident_manager.mttr_seconds(conn)
+    for r in rows:
+        r["support_team"] = json.loads(r["support_team"] or "[]")
+    open_statuses = ("NEW", "ACKNOWLEDGED", "INVESTIGATING", "FIXING", "VERIFYING", "READY_TO_DEPLOY")
+    return {
+        "incidents": rows, "mttr_seconds": mttr,
+        "open_count": sum(1 for r in rows if r["status"] in open_statuses),
+        "critical_count": sum(1 for r in rows if r["severity"] == "P0" and r["status"] in open_statuses),
+    }
+
+
+@route("/api/incidents/detail")
+def incident_detail(qs):
+    incident_number = qs.get("incident_number", [None])[0]
+    if not incident_number:
+        return {"error": "incident_number is required"}
+    with db.get_conn() as conn:
+        incident = db.get_incident(conn, incident_number=incident_number)
+        if not incident:
+            return {"error": f"no such incident: {incident_number}"}
+        events = db.incident_events(conn, incident["id"])
+    incident["support_team"] = json.loads(incident["support_team"] or "[]")
+    return {"incident": incident, "events": events}
+
+
+@route("/api/incidents/sweep")
+def incidents_sweep(qs):
+    from . import incident_scheduler
+    urls = qs.get("website_urls", [None])[0]
+    result = incident_scheduler.run_detection_sweep(website_urls=urls.split(",") if urls else None)
+    return result
+
+
+@route("/api/governor")
+def governor_status_route(qs):
+    from . import governor
+    with db.get_conn() as conn:
+        return governor.governor_status(conn)
+
+
 @route("/api/finance/report")
 def finance_report(qs):
     period = qs.get("period", ["monthly"])[0]
@@ -208,6 +262,69 @@ def memory(qs):
         return {"entries": db.list_all_memory(conn, layer=layer, limit=100)}
 
 
+@route("/api/peopledesk/staff")
+def peopledesk_staff(qs):
+    owner_email = qs.get("owner_email", [None])[0]
+    status = qs.get("status", ["active"])[0]
+    if not owner_email:
+        return {"error": "owner_email is required"}
+    with db.get_conn() as conn:
+        return {"staff": db.list_staff(conn, owner_email, status=status)}
+
+
+@route("/api/peopledesk/payroll")
+def peopledesk_payroll(qs):
+    owner_email = qs.get("owner_email", [None])[0]
+    date_from = qs.get("date_from", [None])[0]
+    date_to = qs.get("date_to", [None])[0]
+    if not (owner_email and date_from and date_to):
+        return {"error": "owner_email, date_from, date_to are required"}
+    from . import peopledesk
+    return {"summary": peopledesk.payroll_summary(owner_email, date_from, date_to)}
+
+
+@route("/api/failure-analyses")
+def failure_analyses_list(qs):
+    status = qs.get("status", [None])[0]
+    with db.get_conn() as conn:
+        return {"analyses": db.list_failure_analyses(conn, status=status)}
+
+
+@route("/api/pa-angella/status")
+def pa_angella_status(qs):
+    with db.get_conn() as conn:
+        last_task = db.last_task_for_agent(conn, "pa_angella")
+        recent_count = db.recent_task_count_for_agent(conn, "pa_angella", minutes=30)
+    return {"last_task": last_task, "active": recent_count > 0, "recent_task_count": recent_count}
+
+
+@route("/api/initiatives")
+def initiatives_list(qs):
+    status = qs.get("status", [None])[0]
+    with db.get_conn() as conn:
+        return {"initiatives": db.list_initiatives(conn, status=status)}
+
+
+@route("/api/dhansetu/courses")
+def dhansetu_courses(qs):
+    status = qs.get("status", [None])[0]
+    with db.get_conn() as conn:
+        return {"courses": db.list_courses(conn, status=status, limit=100)}
+
+
+@route("/api/dhansetu/content-queue")
+def dhansetu_content_queue(qs):
+    with db.get_conn() as conn:
+        items = db.list_content_queue(conn, limit=100)
+    return {"items": [i for i in items if i.get("platform")]}  # Dhansetu-tagged rows only, marketing.py's own rows never set platform
+
+
+@route("/api/dhansetu/links")
+def dhansetu_links(qs):
+    with db.get_conn() as conn:
+        return {"links": db.list_links(conn, active_only=False)}
+
+
 @route("/api/website-projects")
 def website_projects(qs):
     status = qs.get("status", [None])[0]
@@ -238,6 +355,70 @@ def correction_detail(qs):
             return {"error": f"no such correction: {correction_id}"}
         findings = db.correction_findings(conn, correction_id)
     return {"correction": row, "findings": findings}
+
+
+@route("/api/payments")
+def payments_list(qs):
+    status = qs.get("status", [None])[0]
+    with db.get_conn() as conn:
+        rows = db.list_payment_links(conn, status=status, limit=_qs_int(qs, "limit") or 50)
+    total_paid = sum(r["amount_inr"] for r in rows if r["status"] == "paid")
+    return {"payment_links": rows, "total_paid_inr": total_paid}
+
+
+@route("/api/website-reviews")
+def website_reviews(qs):
+    with db.get_conn() as conn:
+        rows = db.list_website_reviews(conn, limit=_qs_int(qs, "limit") or 20)
+    return {"reviews": rows}
+
+
+@route("/api/website-reviews/detail")
+def website_review_detail(qs):
+    review_id = _qs_int(qs, "id")
+    if review_id is None:
+        return {"error": "id is required"}
+    with db.get_conn() as conn:
+        review = db.get_website_review(conn, review_id)
+        if not review:
+            return {"error": f"no such review: {review_id}"}
+        findings = db.website_review_findings(conn, review_id)
+    return {"review": review, "findings": findings}
+
+
+@route("/api/gateway-activity")
+def gateway_activity(qs):
+    """No live credential check here -- payments.py/payment_gateway_manager.py
+    deliberately never store Razorpay/Stripe/UPI credentials, so the
+    dashboard can't validate them without the founder re-entering secrets
+    into a browser, which this project's payments design explicitly avoids.
+    This reports real HISTORY instead: what's actually been used and paid."""
+    with db.get_conn() as conn:
+        links = db.list_payment_links(conn, limit=200)
+        txns = db.list_payment_transactions(conn, limit=200)
+    gateways = {}
+    for r in links:
+        g = gateways.setdefault("razorpay_link", {"count": 0, "paid_count": 0, "last_used": None})
+        g["count"] += 1
+        g["paid_count"] += 1 if r["status"] == "paid" else 0
+        g["last_used"] = max(filter(None, [g["last_used"], r["created_at"]]))
+    for r in txns:
+        g = gateways.setdefault(r["gateway"], {"count": 0, "paid_count": 0, "last_used": None})
+        g["count"] += 1
+        g["paid_count"] += 1 if r["status"] == "paid" else 0
+        g["last_used"] = max(filter(None, [g["last_used"], r["created_at"]]))
+    return {"gateways": gateways}
+
+
+@route("/api/workers")
+def workers_list(qs):
+    from . import load_manager, worker_pool
+    worker_pool.ensure_workers_registered()
+    with db.get_conn() as conn:
+        workers = db.list_workers(conn)
+        lb = load_manager.load_balancer_status(conn)
+        queue = db.list_work_queue(conn, limit=_qs_int(qs, "limit") or 50)
+    return {"workers": workers, "load_balancer": lb, "queue": queue}
 
 
 @route("/api/health")

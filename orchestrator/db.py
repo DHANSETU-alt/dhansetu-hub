@@ -1,3 +1,4 @@
+import json
 import re
 import sqlite3
 from contextlib import contextmanager
@@ -9,6 +10,16 @@ def _connect():
     conn = sqlite3.connect(config.DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # 30s, not sqlite3's 5s default -- the Worker Pool can run multiple
+    # threads against this same file now (each opens its own connection,
+    # never shares one across threads -- see worker_pool.py), and at
+    # least one existing call path (correction_bot.review_and_correct)
+    # holds a connection open across a real model call. A short timeout
+    # would surface as spurious "database is locked" errors under real
+    # concurrent load; this only ever makes a genuinely-contended write
+    # wait longer, never changes query semantics -- safe for every
+    # existing single-threaded caller too.
+    conn.execute("PRAGMA busy_timeout = 30000")
     return conn
 
 
@@ -25,20 +36,42 @@ def get_conn():
 def init_db():
     with get_conn() as conn:
         conn.executescript(config.SCHEMA_PATH.read_text())
+        _migrate_agents_squad_column(conn)
+        _migrate_content_queue_platform_column(conn)
+
+
+def _migrate_agents_squad_column(conn):
+    """CREATE TABLE IF NOT EXISTS never adds a column to a table that
+    already exists -- the live agents table predates `squad`, so it needs
+    a real, idempotent ALTER TABLE. A fresh DB already has the column from
+    schema.sql's CREATE TABLE, so this is a no-op there."""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(agents)").fetchall()]
+    if "squad" not in cols:
+        conn.execute("ALTER TABLE agents ADD COLUMN squad TEXT")
+
+
+def _migrate_content_queue_platform_column(conn):
+    """Same reasoning as agents.squad above -- content_queue predates
+    `platform`, needs the same idempotent ALTER TABLE on the live DB."""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(content_queue)").fetchall()]
+    if "platform" not in cols:
+        conn.execute("ALTER TABLE content_queue ADD COLUMN platform TEXT")
 
 
 def upsert_agent(conn, agent: dict):
+    agent = {**agent, "squad": agent.get("squad")}
     conn.execute(
         """
-        INSERT INTO agents (id, layer, name, default_model_tier, local_model, allowed_scope, allowed_tools, role_prompt)
-        VALUES (:id, :layer, :name, :default_model_tier, :local_model, :allowed_scope, :allowed_tools, :role_prompt)
+        INSERT INTO agents (id, layer, name, default_model_tier, local_model, allowed_scope, allowed_tools, role_prompt, squad)
+        VALUES (:id, :layer, :name, :default_model_tier, :local_model, :allowed_scope, :allowed_tools, :role_prompt, :squad)
         ON CONFLICT(id) DO UPDATE SET
             layer=excluded.layer, name=excluded.name,
             default_model_tier=excluded.default_model_tier,
             local_model=excluded.local_model,
             allowed_scope=excluded.allowed_scope,
             allowed_tools=excluded.allowed_tools,
-            role_prompt=excluded.role_prompt
+            role_prompt=excluded.role_prompt,
+            squad=excluded.squad
         """,
         agent,
     )
@@ -615,6 +648,328 @@ def list_corrections(conn, limit: int = 20):
     return [dict(r) for r in rows]
 
 
+def insert_payment_link(conn, razorpay_link_id: str, short_url: str, amount_inr: float, description: str,
+                         customer_name: str = None, customer_contact: str = None, reference_id: str = None,
+                         status: str = "created") -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO payment_links (razorpay_link_id, short_url, amount_inr, description,
+                                    customer_name, customer_contact, reference_id, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (razorpay_link_id, short_url, amount_inr, description, customer_name, customer_contact, reference_id, status),
+    )
+    return cur.lastrowid
+
+
+def update_payment_link_status(conn, razorpay_link_id: str, status: str):
+    conn.execute(
+        "UPDATE payment_links SET status = ?, last_checked_at = CURRENT_TIMESTAMP WHERE razorpay_link_id = ?",
+        (status, razorpay_link_id),
+    )
+
+
+def get_payment_link(conn, razorpay_link_id: str):
+    row = conn.execute("SELECT * FROM payment_links WHERE razorpay_link_id = ?", (razorpay_link_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_payment_links(conn, status: str = None, limit: int = 50):
+    if status:
+        rows = conn.execute(
+            "SELECT * FROM payment_links WHERE status = ? ORDER BY id DESC LIMIT ?", (status, limit)
+        ).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM payment_links ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def insert_website_review(conn, url: str, business_id: int | None) -> int:
+    cur = conn.execute("INSERT INTO website_reviews (url, business_id) VALUES (?, ?)", (url, business_id))
+    return cur.lastrowid
+
+
+def complete_website_review(conn, review_id: int, seo_score: int, conversion_score: int, ui_score: int,
+                             deployment_ready: bool, findings_count: int, summary: str):
+    conn.execute(
+        """
+        UPDATE website_reviews SET status = 'completed', seo_score = ?, conversion_score = ?, ui_score = ?,
+               deployment_ready = ?, findings_count = ?, summary = ?, completed_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (seo_score, conversion_score, ui_score, 1 if deployment_ready else 0, findings_count, summary, review_id),
+    )
+
+
+def fail_website_review(conn, review_id: int, error_message: str):
+    conn.execute(
+        "UPDATE website_reviews SET status = 'failed', summary = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (f"FAILED: {error_message}", review_id),
+    )
+
+
+def insert_website_review_finding(conn, review_id: int, category: str, severity: str, description: str) -> int:
+    cur = conn.execute(
+        "INSERT INTO website_review_findings (review_id, category, severity, description) VALUES (?, ?, ?, ?)",
+        (review_id, category, severity, description),
+    )
+    return cur.lastrowid
+
+
+def get_website_review(conn, review_id: int):
+    row = conn.execute("SELECT * FROM website_reviews WHERE id = ?", (review_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def website_review_findings(conn, review_id: int):
+    rows = conn.execute("SELECT * FROM website_review_findings WHERE review_id = ? ORDER BY id", (review_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_website_reviews(conn, limit: int = 20):
+    rows = conn.execute("SELECT * FROM website_reviews ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def insert_payment_transaction(conn, gateway: str, gateway_ref: str, amount: float, currency: str, description: str,
+                                customer_name: str = None, customer_contact: str = None, business_id: int = None,
+                                url_or_link: str = None, status: str = "created") -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO payment_transactions (gateway, gateway_ref, amount, currency, description, customer_name,
+                                           customer_contact, business_id, url_or_link, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (gateway, gateway_ref, amount, currency, description, customer_name, customer_contact,
+         business_id, url_or_link, status),
+    )
+    return cur.lastrowid
+
+
+def list_payment_transactions(conn, gateway: str = None, limit: int = 50):
+    if gateway:
+        rows = conn.execute(
+            "SELECT * FROM payment_transactions WHERE gateway = ? ORDER BY id DESC LIMIT ?", (gateway, limit)
+        ).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM payment_transactions ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --- Worker Pool -------------------------------------------------------
+
+def upsert_worker(conn, name: str, worker_type: str, concurrency_limit: int) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO workers (name, worker_type, concurrency_limit) VALUES (?, ?, ?)
+        ON CONFLICT(name) DO UPDATE SET worker_type = excluded.worker_type, concurrency_limit = excluded.concurrency_limit
+        """,
+        (name, worker_type, concurrency_limit),
+    )
+    row = conn.execute("SELECT id FROM workers WHERE name = ?", (name,)).fetchone()
+    return row["id"]
+
+
+def mark_worker_busy(conn, worker_id: int):
+    conn.execute("UPDATE workers SET status = 'busy', last_active_at = CURRENT_TIMESTAMP WHERE id = ?", (worker_id,))
+
+
+def mark_worker_idle(conn, worker_id: int, succeeded: bool):
+    if succeeded:
+        conn.execute(
+            "UPDATE workers SET status = 'idle', tasks_completed = tasks_completed + 1, last_active_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (worker_id,),
+        )
+    else:
+        conn.execute(
+            "UPDATE workers SET status = 'idle', tasks_failed = tasks_failed + 1, last_active_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (worker_id,),
+        )
+
+
+def mark_worker_failed(conn, worker_id: int):
+    conn.execute(
+        "UPDATE workers SET status = 'failed', tasks_failed = tasks_failed + 1, last_active_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (worker_id,),
+    )
+
+
+def list_workers(conn):
+    return [dict(r) for r in conn.execute("SELECT * FROM workers ORDER BY worker_type, name").fetchall()]
+
+
+def enqueue_work(conn, kind: str, payload: str, priority: int = 5) -> int:
+    cur = conn.execute("INSERT INTO work_queue (kind, payload, priority) VALUES (?, ?, ?)", (kind, payload, priority))
+    return cur.lastrowid
+
+
+def queue_depth(conn, status: str = "queued") -> int:
+    row = conn.execute("SELECT COUNT(*) AS n FROM work_queue WHERE status = ?", (status,)).fetchone()
+    return row["n"]
+
+
+def next_queued_work(conn, limit: int):
+    rows = conn.execute(
+        "SELECT * FROM work_queue WHERE status = 'queued' ORDER BY priority ASC, id ASC LIMIT ?", (limit,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_work_running(conn, work_id: int, worker_type: str, worker_id: int):
+    conn.execute(
+        "UPDATE work_queue SET status = 'running', assigned_worker_type = ?, assigned_worker_id = ?, started_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (worker_type, worker_id, work_id),
+    )
+
+
+def complete_work(conn, work_id: int, result: str):
+    conn.execute(
+        "UPDATE work_queue SET status = 'done', result = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (result, work_id),
+    )
+
+
+def fail_work(conn, work_id: int, error: str):
+    conn.execute(
+        "UPDATE work_queue SET status = 'failed', error = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (error, work_id),
+    )
+
+
+def list_work_queue(conn, status: str = None, limit: int = 50):
+    if status:
+        rows = conn.execute("SELECT * FROM work_queue WHERE status = ? ORDER BY id DESC LIMIT ?", (status, limit)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM work_queue ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --- Emergency Response Team (incidents) --------------------------------
+
+def next_incident_number(conn, year: int) -> str:
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM incidents WHERE incident_number LIKE ?", (f"INC-{year}-%",)
+    ).fetchone()
+    return f"INC-{year}-{row['n'] + 1:03d}"
+
+
+def insert_incident(conn, incident_number: str, incident_type: str, severity: str, owner: str,
+                     support_team: str, description: str, detected_by: str = "manual") -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO incidents (incident_number, incident_type, severity, owner, support_team, description, detected_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (incident_number, incident_type, severity, owner, support_team, description, detected_by),
+    )
+    return cur.lastrowid
+
+
+def update_incident_status(conn, incident_id: int, status: str):
+    extra_col = {"ACKNOWLEDGED": "acknowledged_at", "RESOLVED": "resolved_at", "CLOSED": "closed_at"}.get(status)
+    if extra_col:
+        conn.execute(f"UPDATE incidents SET status = ?, {extra_col} = CURRENT_TIMESTAMP WHERE id = ?", (status, incident_id))
+    else:
+        conn.execute("UPDATE incidents SET status = ? WHERE id = ?", (status, incident_id))
+
+
+def update_incident_fields(conn, incident_id: int, **fields):
+    if not fields:
+        return
+    cols = ", ".join(f"{k} = ?" for k in fields)
+    conn.execute(f"UPDATE incidents SET {cols} WHERE id = ?", (*fields.values(), incident_id))
+
+
+def get_incident(conn, incident_id: int = None, incident_number: str = None):
+    if incident_number:
+        row = conn.execute("SELECT * FROM incidents WHERE incident_number = ?", (incident_number,)).fetchone()
+    else:
+        row = conn.execute("SELECT * FROM incidents WHERE id = ?", (incident_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_incidents(conn, status: str = None, severity: str = None, limit: int = 100):
+    query, params = "SELECT * FROM incidents", []
+    clauses = []
+    if status:
+        clauses.append("status = ?"); params.append(status)
+    if severity:
+        clauses.append("severity = ?"); params.append(severity)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY id DESC LIMIT ?"; params.append(limit)
+    return [dict(r) for r in conn.execute(query, params).fetchall()]
+
+
+def insert_incident_event(conn, incident_id: int, event_type: str, detail: str = "") -> int:
+    cur = conn.execute(
+        "INSERT INTO incident_events (incident_id, event_type, detail) VALUES (?, ?, ?)",
+        (incident_id, event_type, detail),
+    )
+    return cur.lastrowid
+
+
+def incident_events(conn, incident_id: int):
+    rows = conn.execute("SELECT * FROM incident_events WHERE incident_id = ? ORDER BY id", (incident_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --- Pricing / usage gating ----------------------------------------------
+
+def get_usage(conn, email: str, product: str):
+    row = conn.execute("SELECT * FROM product_usage WHERE email = ? AND product = ?", (email, product)).fetchone()
+    return dict(row) if row else None
+
+
+def increment_usage(conn, email: str, product: str) -> int:
+    conn.execute(
+        """
+        INSERT INTO product_usage (email, product, use_count) VALUES (?, ?, 1)
+        ON CONFLICT(email, product) DO UPDATE SET use_count = use_count + 1, last_used_at = CURRENT_TIMESTAMP
+        """,
+        (email, product),
+    )
+    row = conn.execute("SELECT use_count FROM product_usage WHERE email = ? AND product = ?", (email, product)).fetchone()
+    return row["use_count"]
+
+
+def get_active_subscription(conn, email: str, product: str):
+    row = conn.execute(
+        "SELECT * FROM product_subscriptions WHERE email = ? AND product = ? AND status = 'active' "
+        "AND valid_until >= datetime('now') ORDER BY id DESC LIMIT 1",
+        (email, product),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def insert_subscription(conn, email: str, product: str, amount_inr: float, gateway: str, gateway_ref: str = None,
+                         status: str = "pending", valid_until: str = None) -> int:
+    cur = conn.execute(
+        "INSERT INTO product_subscriptions (email, product, status, valid_until, amount_inr, gateway, gateway_ref) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (email, product, status, valid_until, amount_inr, gateway, gateway_ref),
+    )
+    return cur.lastrowid
+
+
+def activate_subscription(conn, subscription_id: int, valid_until: str):
+    conn.execute("UPDATE product_subscriptions SET status = 'active', valid_until = ? WHERE id = ?",
+                 (valid_until, subscription_id))
+
+
+def list_subscriptions(conn, product: str = None, status: str = None, limit: int = 100):
+    query, params = "SELECT * FROM product_subscriptions", []
+    clauses = []
+    if product:
+        clauses.append("product = ?"); params.append(product)
+    if status:
+        clauses.append("status = ?"); params.append(status)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY id DESC LIMIT ?"; params.append(limit)
+    return [dict(r) for r in conn.execute(query, params).fetchall()]
+
+
 # --- v4: Sentinel (system_health) -------------------------------------------
 
 def insert_health_snapshot(conn, **fields) -> int:
@@ -761,4 +1116,496 @@ def list_website_projects(conn, status: str = None, limit: int = 50):
         ).fetchall()
     else:
         rows = conn.execute("SELECT * FROM website_projects ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --- Sales / leads ------------------------------------------------------
+
+def insert_lead(conn, business_id, name: str, email: str, contact: str, source: str, notes: str = None) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO leads (business_id, name, email, contact, source, notes)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (business_id, name, email, contact, source, notes),
+    )
+    return cur.lastrowid
+
+
+def get_lead(conn, lead_id: int):
+    row = conn.execute("SELECT * FROM leads WHERE id = ?", (lead_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def update_lead(conn, lead_id: int, **fields):
+    if not fields:
+        return
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    conn.execute(
+        f"UPDATE leads SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (*fields.values(), lead_id),
+    )
+
+
+def list_leads(conn, status: str = None, owner: str = None, limit: int = 50):
+    query, params = "SELECT * FROM leads", []
+    clauses = []
+    if status:
+        clauses.append("status = ?"); params.append(status)
+    if owner:
+        clauses.append("owner = ?"); params.append(owner)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
+    rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def log_lead_event(conn, lead_id: int, event_type: str, payload: str = "", task_id: int = None):
+    conn.execute(
+        "INSERT INTO lead_events (lead_id, event_type, payload, task_id) VALUES (?, ?, ?, ?)",
+        (lead_id, event_type, payload, task_id),
+    )
+
+
+def list_lead_events(conn, lead_id: int, limit: int = 50):
+    rows = conn.execute(
+        "SELECT * FROM lead_events WHERE lead_id = ? ORDER BY id DESC LIMIT ?", (lead_id, limit)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --- Marketing / content queue ------------------------------------------
+
+def insert_content(conn, business_id, content_type: str, variant_label: str, target: str,
+                    content: str, icp_fit_score: float = None, platform: str = None) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO content_queue (business_id, content_type, variant_label, target, content, icp_fit_score, platform)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (business_id, content_type, variant_label, target, content, icp_fit_score, platform),
+    )
+    return cur.lastrowid
+
+
+def get_content(conn, content_id: int):
+    row = conn.execute("SELECT * FROM content_queue WHERE id = ?", (content_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def update_content_status(conn, content_id: int, status: str):
+    conn.execute("UPDATE content_queue SET status = ? WHERE id = ?", (status, content_id))
+
+
+def list_content_queue(conn, content_type: str = None, status: str = None, limit: int = 50):
+    query, params = "SELECT * FROM content_queue", []
+    clauses = []
+    if content_type:
+        clauses.append("content_type = ?"); params.append(content_type)
+    if status:
+        clauses.append("status = ?"); params.append(status)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
+    rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --- Daily team work register --------------------------------------------
+
+def insert_team_member(conn, business_id, name: str, role: str = None, contact: str = None) -> int:
+    cur = conn.execute(
+        "INSERT INTO team_members (business_id, name, role, contact) VALUES (?, ?, ?, ?)",
+        (business_id, name, role, contact),
+    )
+    return cur.lastrowid
+
+
+def get_team_member(conn, worker_id: int):
+    row = conn.execute("SELECT * FROM team_members WHERE id = ?", (worker_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_team_members(conn, business_id: int = None, status: str = None):
+    query, params = "SELECT * FROM team_members", []
+    clauses = []
+    if business_id is not None:
+        clauses.append("business_id = ?"); params.append(business_id)
+    if status:
+        clauses.append("status = ?"); params.append(status)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY name"
+    rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def upsert_daily_work_log(conn, worker_id: int, business_id, work_date: str, present: bool,
+                           hours_worked: float = None, work_assigned: str = None,
+                           work_done: str = None, notes: str = None) -> int:
+    """One real entry per worker per day -- a second log_day() call for the
+    same worker/date corrects that day's entry (same as crossing out and
+    rewriting a line in a physical register), it doesn't create a duplicate."""
+    cur = conn.execute(
+        """
+        INSERT INTO daily_work_logs (worker_id, business_id, work_date, present, hours_worked, work_assigned, work_done, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(worker_id, work_date) DO UPDATE SET
+            present=excluded.present, hours_worked=excluded.hours_worked,
+            work_assigned=excluded.work_assigned, work_done=excluded.work_done,
+            notes=excluded.notes, updated_at=CURRENT_TIMESTAMP
+        """,
+        (worker_id, business_id, work_date, 1 if present else 0, hours_worked, work_assigned, work_done, notes),
+    )
+    if cur.lastrowid:
+        return cur.lastrowid
+    row = conn.execute(
+        "SELECT id FROM daily_work_logs WHERE worker_id = ? AND work_date = ?", (worker_id, work_date)
+    ).fetchone()
+    return row["id"]
+
+
+def get_daily_work_log(conn, worker_id: int, work_date: str):
+    row = conn.execute(
+        "SELECT * FROM daily_work_logs WHERE worker_id = ? AND work_date = ?", (worker_id, work_date)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def list_daily_work_logs(conn, worker_id: int = None, business_id: int = None,
+                          work_date: str = None, date_from: str = None, date_to: str = None):
+    query, params = "SELECT * FROM daily_work_logs", []
+    clauses = []
+    if worker_id is not None:
+        clauses.append("worker_id = ?"); params.append(worker_id)
+    if business_id is not None:
+        clauses.append("business_id = ?"); params.append(business_id)
+    if work_date:
+        clauses.append("work_date = ?"); params.append(work_date)
+    if date_from:
+        clauses.append("work_date >= ?"); params.append(date_from)
+    if date_to:
+        clauses.append("work_date <= ?"); params.append(date_to)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY work_date DESC, worker_id"
+    rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --- Agent skill test / review -------------------------------------------
+
+def insert_skill_review(conn, agent_id: str, test_goal: str, response: str, relevance_score,
+                         guardrails_score, clarity_score, history_score, has_history: bool,
+                         total_score: int, deterministic_check: str = None,
+                         possible_fabrication: bool = False, notes: str = None, task_id: int = None) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO skill_reviews (agent_id, test_goal, response, relevance_score, guardrails_score,
+            clarity_score, history_score, has_history, total_score, deterministic_check,
+            possible_fabrication, notes, task_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (agent_id, test_goal, response, relevance_score, guardrails_score, clarity_score, history_score,
+         1 if has_history else 0, total_score, deterministic_check, 1 if possible_fabrication else 0, notes, task_id),
+    )
+    return cur.lastrowid
+
+
+def latest_skill_reviews(conn):
+    """Most recent review per agent -- a re-run replaces the prior score in
+    this view, it doesn't average with it (a re-test should reflect current
+    behavior, not be diluted by an old run)."""
+    rows = conn.execute(
+        """
+        SELECT sr.* FROM skill_reviews sr
+        INNER JOIN (SELECT agent_id, MAX(id) AS max_id FROM skill_reviews GROUP BY agent_id) latest
+          ON sr.agent_id = latest.agent_id AND sr.id = latest.max_id
+        ORDER BY sr.total_score ASC
+        """
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_skill_reviews(conn, agent_id: str = None, limit: int = 50):
+    query, params = "SELECT * FROM skill_reviews", []
+    if agent_id:
+        query += " WHERE agent_id = ?"; params.append(agent_id)
+    query += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
+    rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --- Dhansetu AI: courses -------------------------------------------------
+
+def insert_course(conn, business_id, title: str, language: str = "gu", source: str = "manual") -> int:
+    cur = conn.execute(
+        "INSERT INTO courses (business_id, title, language, source) VALUES (?, ?, ?, ?)",
+        (business_id, title, language, source),
+    )
+    return cur.lastrowid
+
+
+def get_course(conn, course_id: int):
+    row = conn.execute("SELECT * FROM courses WHERE id = ?", (course_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def update_course(conn, course_id: int, **fields):
+    if not fields:
+        return
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    conn.execute(f"UPDATE courses SET {set_clause} WHERE id = ?", (*fields.values(), course_id))
+
+
+def list_courses(conn, business_id: int = None, status: str = None, limit: int = 50):
+    query, params = "SELECT * FROM courses", []
+    clauses = []
+    if business_id is not None:
+        clauses.append("business_id = ?"); params.append(business_id)
+    if status:
+        clauses.append("status = ?"); params.append(status)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
+    rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --- Dhansetu AI: link tree -----------------------------------------------
+
+def insert_link(conn, business_id, title: str, url: str, sort_order: int = 0) -> int:
+    cur = conn.execute(
+        "INSERT INTO link_tree_entries (business_id, title, url, sort_order) VALUES (?, ?, ?, ?)",
+        (business_id, title, url, sort_order),
+    )
+    return cur.lastrowid
+
+
+def list_links(conn, business_id: int = None, active_only: bool = True):
+    query, params = "SELECT * FROM link_tree_entries", []
+    clauses = []
+    if business_id is not None:
+        clauses.append("business_id = ?"); params.append(business_id)
+    if active_only:
+        clauses.append("active = 1")
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY sort_order, id"
+    rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --- blackboxOps_OS onboarding: business discovery (Stage 1 only) --------
+
+def insert_business_discovery(conn, fields: dict) -> int:
+    cols = ["business_name", "industry", "website", "business_model", "target_customer",
+            "revenue_streams", "team_size", "monthly_revenue_range", "main_challenges",
+            "preferred_tools", "current_software", "growth_goal_12mo"]
+    values = [fields.get(c) for c in cols]
+    placeholders = ", ".join("?" for _ in cols)
+    cur = conn.execute(
+        f"INSERT INTO business_discoveries ({', '.join(cols)}) VALUES ({placeholders})",
+        values,
+    )
+    return cur.lastrowid
+
+
+def get_business_discovery(conn, discovery_id: int):
+    row = conn.execute("SELECT * FROM business_discoveries WHERE id = ?", (discovery_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def update_business_discovery(conn, discovery_id: int, **fields):
+    if not fields:
+        return
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    conn.execute(
+        f"UPDATE business_discoveries SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (*fields.values(), discovery_id),
+    )
+
+
+def list_business_discoveries(conn, status: str = None, limit: int = 50):
+    query, params = "SELECT * FROM business_discoveries", []
+    if status:
+        query += " WHERE status = ?"; params.append(status)
+    query += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
+    rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --- Initiative tracker (founder-facing "Task 1, Task 2, ...") -----------
+
+def insert_initiative(conn, title: str, artifact_url: str = None) -> int:
+    next_seq = conn.execute("SELECT COALESCE(MAX(seq), 0) + 1 FROM initiatives").fetchone()[0]
+    cur = conn.execute(
+        "INSERT INTO initiatives (seq, title, artifact_url) VALUES (?, ?, ?)",
+        (next_seq, title, artifact_url),
+    )
+    return cur.lastrowid
+
+
+def add_initiative_milestone(conn, initiative_id: int, title: str, done: bool = False) -> int:
+    cur = conn.execute(
+        "INSERT INTO initiative_milestones (initiative_id, title, done) VALUES (?, ?, ?)",
+        (initiative_id, title, int(done)),
+    )
+    if done:
+        conn.execute("UPDATE initiative_milestones SET done_at = CURRENT_TIMESTAMP WHERE id = ?", (cur.lastrowid,))
+    return cur.lastrowid
+
+
+def set_milestone_done(conn, milestone_id: int, done: bool = True):
+    if done:
+        conn.execute(
+            "UPDATE initiative_milestones SET done = 1, done_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (milestone_id,),
+        )
+    else:
+        conn.execute(
+            "UPDATE initiative_milestones SET done = 0, done_at = NULL WHERE id = ?",
+            (milestone_id,),
+        )
+
+
+def set_initiative_status(conn, initiative_id: int, status: str):
+    conn.execute(
+        "UPDATE initiatives SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (status, initiative_id),
+    )
+
+
+def list_initiatives(conn, status: str = None) -> list:
+    query, params = "SELECT * FROM initiatives", []
+    if status:
+        query += " WHERE status = ?"; params.append(status)
+    query += " ORDER BY seq ASC"
+    initiatives = [dict(r) for r in conn.execute(query, params).fetchall()]
+
+    milestone_rows = conn.execute(
+        "SELECT * FROM initiative_milestones ORDER BY id ASC"
+    ).fetchall()
+    by_initiative = {}
+    for r in milestone_rows:
+        by_initiative.setdefault(r["initiative_id"], []).append(dict(r))
+
+    for init in initiatives:
+        milestones = by_initiative.get(init["id"], [])
+        done_count = sum(1 for m in milestones if m["done"])
+        init["milestones"] = milestones
+        init["milestone_total"] = len(milestones)
+        init["milestone_done"] = done_count
+        init["percent_complete"] = round(100 * done_count / len(milestones)) if milestones else 0
+
+    return initiatives
+
+
+def last_task_for_agent(conn, agent_id: str):
+    row = conn.execute(
+        "SELECT id, status, created_at FROM tasks WHERE agent_id = ? ORDER BY id DESC LIMIT 1",
+        (agent_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def recent_task_count_for_agent(conn, agent_id: str, minutes: int = 30) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) FROM tasks WHERE agent_id = ? AND created_at >= datetime('now', ?)",
+        (agent_id, f"-{minutes} minutes"),
+    ).fetchone()
+    return row[0]
+
+
+# --- Failure Analysis Engine (Task 4) -------------------------------------
+
+def insert_failure_analysis(conn, source_type: str, source_id, title: str, severity: str,
+                             summary: str, five_whys: list, root_cause: str,
+                             corrective_action: str, preventive_action: str,
+                             lessons_learned: str, status: str = "open") -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO failure_analyses (source_type, source_id, title, severity, summary,
+                                       five_whys, root_cause, corrective_action,
+                                       preventive_action, lessons_learned, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (source_type, source_id, title, severity, summary, json.dumps(five_whys),
+         root_cause, corrective_action, preventive_action, lessons_learned, status),
+    )
+    return cur.lastrowid
+
+
+def list_failure_analyses(conn, status: str = None, limit: int = 50) -> list:
+    query, params = "SELECT * FROM failure_analyses", []
+    if status:
+        query += " WHERE status = ?"; params.append(status)
+    query += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
+    rows = [dict(r) for r in conn.execute(query, params).fetchall()]
+    for r in rows:
+        r["five_whys"] = json.loads(r["five_whys"])
+    return rows
+
+
+# --- Dhansetu PeopleDesk (Task 5) ------------------------------------------
+
+def insert_staff(conn, owner_email: str, name: str, role: str, phone: str, pay_type: str,
+                  daily_wage_inr, monthly_salary_inr, join_date: str) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO peopledesk_staff (owner_email, name, role, phone, pay_type,
+                                       daily_wage_inr, monthly_salary_inr, join_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (owner_email, name, role, phone, pay_type, daily_wage_inr, monthly_salary_inr, join_date),
+    )
+    return cur.lastrowid
+
+
+def list_staff(conn, owner_email: str, status: str = "active") -> list:
+    query, params = "SELECT * FROM peopledesk_staff WHERE owner_email = ?", [owner_email]
+    if status:
+        query += " AND status = ?"; params.append(status)
+    query += " ORDER BY name ASC"
+    return [dict(r) for r in conn.execute(query, params).fetchall()]
+
+
+def get_staff(conn, staff_id: int):
+    row = conn.execute("SELECT * FROM peopledesk_staff WHERE id = ?", (staff_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def set_staff_status(conn, staff_id: int, status: str):
+    conn.execute("UPDATE peopledesk_staff SET status = ? WHERE id = ?", (status, staff_id))
+
+
+def mark_attendance(conn, staff_id: int, attendance_date: str, status: str) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO peopledesk_attendance (staff_id, attendance_date, status)
+        VALUES (?, ?, ?)
+        ON CONFLICT(staff_id, attendance_date) DO UPDATE SET status = excluded.status
+        """,
+        (staff_id, attendance_date, status),
+    )
+    return cur.lastrowid
+
+
+def attendance_for_range(conn, owner_email: str, date_from: str, date_to: str) -> list:
+    rows = conn.execute(
+        """
+        SELECT a.* FROM peopledesk_attendance a
+        JOIN peopledesk_staff s ON s.id = a.staff_id
+        WHERE s.owner_email = ? AND a.attendance_date >= ? AND a.attendance_date <= ?
+        ORDER BY a.attendance_date ASC
+        """,
+        (owner_email, date_from, date_to),
+    ).fetchall()
     return [dict(r) for r in rows]

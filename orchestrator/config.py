@@ -41,3 +41,19 @@ DENIED_FILENAME_PATTERNS = (
 WEBSITE_AUDIT_TIMEOUT_SECONDS = int(os.environ.get("SHAKTHI_WEB_AUDIT_TIMEOUT", "15"))
 WEBSITE_AUDIT_MAX_LINKS_CHECKED = 25
 WEBSITE_AUDIT_USER_AGENT = "ShakthiOS-Sentinel/1.0 (+website-audit)"
+
+# --- Worker Pool ----------------------------------------------------------
+# Queue depth above which load_manager scales worker concurrency up.
+WORKER_QUEUE_SCALE_THRESHOLD = int(os.environ.get("SHAKTHI_WORKER_SCALE_THRESHOLD", "3"))
+# Hard ceiling -- above this, check_queue_overflow alerts; a real backstop,
+# not just a scaling knob.
+WORKER_QUEUE_MAX_SIZE = int(os.environ.get("SHAKTHI_WORKER_QUEUE_MAX", "50"))
+WORKER_CONCURRENCY_LIMITS = {"rapid": 8, "engineering": 3, "infra": 4}
+WORKER_BASE_CONCURRENCY = 1  # per worker type, when queue depth is at/under the scale threshold
+
+# --- Dhansetu PDF Studio ---------------------------------------------------
+PDF_STUDIO_DIR = ROOT / "pdf_studio_files"  # gitignored; uploads + processed output
+PDF_STUDIO_MAX_FILE_BYTES = 50_000_000  # 50MB per uploaded file
+
+# --- Emergency Response Team (ERT) -----------------------------------------
+POSTMORTEMS_DIR = ROOT / "postmortems"  # one file per incident, never overwritten

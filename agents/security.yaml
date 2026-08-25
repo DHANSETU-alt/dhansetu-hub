@@ -1,5 +1,6 @@
 id: security
 layer: governance
+squad: "GStack"
 name: Shakthi Security
 default_model_tier: local
 local_model: llama3.2

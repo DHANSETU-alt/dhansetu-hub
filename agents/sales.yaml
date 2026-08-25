@@ -1,5 +1,6 @@
 id: sales
 layer: business
+squad: "Get Shit Done"
 name: Shakthi Sales
 default_model_tier: local
 local_model: llama3.2

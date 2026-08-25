@@ -127,6 +127,25 @@ def ensure_structure(client, spreadsheet_id: str):
         ).execute()
 
 
+def read_values(client, spreadsheet_id: str, range_a1: str) -> list:
+    """Real read call against the documented Sheets API v4 values.get shape
+    -- same "not yet exercised against a live spreadsheet" caveat as the
+    rest of this module (see module docstring): no service account was
+    available to test with this session. Used by dhansetu_ai.py to pull
+    course titles from the founder's own sheet; range_a1 e.g. "'Courses'!A2:A".
+    """
+    result = client.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range=range_a1).execute()
+    return result.get("values", [])
+
+
+def read_course_titles(client, spreadsheet_id: str, sheet_name: str = "Courses") -> list:
+    """One title per non-empty row in column A, header row skipped (starts
+    at row 2). Returns real titles only -- blank rows in the middle of the
+    sheet are dropped, not turned into empty-string course entries."""
+    rows = read_values(client, spreadsheet_id, f"'{sheet_name}'!A2:A")
+    return [row[0].strip() for row in rows if row and row[0].strip()]
+
+
 def _append(client, spreadsheet_id: str, sheet: str, rows: list):
     if not rows:
         return 0

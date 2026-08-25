@@ -19,3 +19,6 @@ dashboard/next-env.d.ts
 logs/
 .api.pid
 .dashboard.pid
+
+# Dhansetu PDF Studio -- uploaded/processed files, not source
+pdf_studio_files/

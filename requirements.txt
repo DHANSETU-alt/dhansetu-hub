@@ -11,6 +11,14 @@ truststore>=0.9
 # Sentinel -- real system metrics (CPU/RAM/disk/battery). Installs cleanly.
 psutil>=6.0
 
+# Dhansetu PDF Studio -- pure Python, no system binary needed (no qpdf/
+# ghostscript on this machine, no Homebrew to install one -- checked
+# live). Handles merge/split/rotate/extract/encrypt/decrypt natively.
+pypdf>=6.0
+# Pillow already required transitively; pinned here since PDF Studio's
+# image-to-PDF conversion depends on it directly.
+Pillow>=10.0
+
 # Voice Commander. Install notes (Python 3.14, no Homebrew on this
 # machine -- both were real, live blockers, not hypothetical):
 #   - openai-whisper needs PyTorch, which has NO wheels for Python 3.14

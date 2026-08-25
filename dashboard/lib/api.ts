@@ -31,6 +31,7 @@ export type Agent = {
   allowed_scope: string;
   allowed_tools: string[];
   role_prompt: string;
+  squad: string | null;
 };
 
 export type Decision = {
@@ -85,7 +86,219 @@ export const getOverview = () =>
 
 export const getAgents = () => apiGet<{ agents: Agent[] }>("/api/agents");
 
+export type Course = {
+  id: number;
+  business_id: number | null;
+  title: string;
+  language: string;
+  outline: string | null;
+  sales_copy: string | null;
+  source: string | null;
+  status: string;
+  created_at: string;
+};
+export const getDhansetuCourses = (status?: string) =>
+  apiGet<{ courses: Course[] }>(`/api/dhansetu/courses${status ? `?status=${status}` : ""}`);
+
+export type DhansetuContentItem = {
+  id: number;
+  business_id: number | null;
+  content_type: string;
+  variant_label: string | null;
+  target: string | null;
+  content: string;
+  icp_fit_score: number | null;
+  status: string;
+  platform: string | null;
+  created_at: string;
+};
+export const getDhansetuContentQueue = () => apiGet<{ items: DhansetuContentItem[] }>("/api/dhansetu/content-queue");
+
+export type LinkTreeEntry = {
+  id: number;
+  business_id: number | null;
+  title: string;
+  url: string;
+  sort_order: number;
+  active: number;
+  created_at: string;
+};
+export const getDhansetuLinks = () => apiGet<{ links: LinkTreeEntry[] }>("/api/dhansetu/links");
+
+export type InitiativeMilestone = {
+  id: number;
+  initiative_id: number;
+  title: string;
+  done: number;
+  created_at: string;
+  done_at: string | null;
+};
+export type Initiative = {
+  id: number;
+  seq: number;
+  title: string;
+  artifact_url: string | null;
+  status: "running" | "paused" | "done";
+  created_at: string;
+  updated_at: string;
+  milestones: InitiativeMilestone[];
+  milestone_total: number;
+  milestone_done: number;
+  percent_complete: number;
+};
+export const getInitiatives = (status?: string) =>
+  apiGet<{ initiatives: Initiative[] }>(`/api/initiatives${status ? `?status=${status}` : ""}`);
+
+export type PaAngellaStatus = {
+  last_task: { id: number; status: string; created_at: string } | null;
+  active: boolean;
+  recent_task_count: number;
+};
+export const getPaAngellaStatus = () => apiGet<PaAngellaStatus>("/api/pa-angella/status");
+
+export type FailureAnalysis = {
+  id: number;
+  source_type: string;
+  source_id: number | null;
+  title: string;
+  severity: string;
+  summary: string;
+  five_whys: string[];
+  root_cause: string;
+  corrective_action: string;
+  preventive_action: string;
+  lessons_learned: string;
+  status: "open" | "closed";
+  created_at: string;
+};
+export const getFailureAnalyses = (status?: string) =>
+  apiGet<{ analyses: FailureAnalysis[] }>(`/api/failure-analyses${status ? `?status=${status}` : ""}`);
+
+export type PeopledeskStaff = {
+  id: number;
+  owner_email: string;
+  name: string;
+  role: string | null;
+  phone: string | null;
+  pay_type: "daily" | "monthly";
+  daily_wage_inr: number | null;
+  monthly_salary_inr: number | null;
+  join_date: string | null;
+  status: string;
+  created_at: string;
+};
+export const getPeopledeskStaff = (ownerEmail: string) =>
+  apiGet<{ staff: PeopledeskStaff[] }>(`/api/peopledesk/staff?owner_email=${encodeURIComponent(ownerEmail)}`);
+
+export type PeopledeskPayrollRow = {
+  staff_id: number;
+  name: string;
+  pay_type: "daily" | "monthly";
+  present_days: number;
+  half_days: number;
+  absent_days: number;
+  leave_days: number;
+  payable_days: number | null;
+  amount_inr: number;
+};
+export const getPeopledeskPayroll = (ownerEmail: string, dateFrom: string, dateTo: string) =>
+  apiGet<{ summary: PeopledeskPayrollRow[] }>(
+    `/api/peopledesk/payroll?owner_email=${encodeURIComponent(ownerEmail)}&date_from=${dateFrom}&date_to=${dateTo}`
+  );
+
 export const getDecisions = (limit = 20) => apiGet<{ decisions: Decision[] }>(`/api/ceo/decisions?limit=${limit}`);
+
+export type CeoHealth = {
+  status: "healthy" | "degraded" | "down" | "unknown";
+  failure_count: number;
+  degraded_count: number;
+  last_error: { task_id: number; goal: string; result: string; at: string } | null;
+  recovery_attempts: number;
+  total_tracked: number;
+};
+
+export const getCeoHealth = () => apiGet<CeoHealth>("/api/ceo/health");
+
+export type GovernorStatus = {
+  status: "operational" | "degraded";
+  subsystems: Record<string, { ok: boolean; detail: string }>;
+  ceo: CeoHealth;
+  failover_events_24h: { task_id: number; status: string; goal: string; at: string }[];
+  failover_event_count_24h: number;
+};
+
+export const getGovernorStatus = () => apiGet<GovernorStatus>("/api/governor");
+
+export type Incident = {
+  id: number;
+  incident_number: string;
+  incident_type: string;
+  severity: string;
+  owner: string;
+  support_team: string[];
+  status: string;
+  description: string;
+  root_cause: string | null;
+  fix_applied: string | null;
+  detected_by: string;
+  recovery_action: string | null;
+  recovery_result: string | null;
+  created_at: string;
+  acknowledged_at: string | null;
+  resolved_at: string | null;
+  closed_at: string | null;
+};
+
+export type IncidentEvent = { id: number; incident_id: number; event_type: string; detail: string; created_at: string };
+
+export const getIncidents = (status?: string, severity?: string, limit = 100) => {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (severity) params.set("severity", severity);
+  params.set("limit", String(limit));
+  return apiGet<{ incidents: Incident[]; mttr_seconds: number | null; open_count: number; critical_count: number }>(`/api/incidents?${params}`);
+};
+
+export const getIncidentDetail = (incidentNumber: string) =>
+  apiGet<{ incident: Incident; events: IncidentEvent[] }>(`/api/incidents/detail?incident_number=${incidentNumber}`);
+
+export type Worker = {
+  id: number;
+  name: string;
+  worker_type: string;
+  status: string;
+  concurrency_limit: number;
+  tasks_completed: number;
+  tasks_failed: number;
+  last_active_at: string | null;
+};
+
+export type LoadBalancerStatus = {
+  queue_depth: number;
+  scale_threshold: number;
+  max_queue_size: number;
+  scaled_up: boolean;
+  overflowing: boolean;
+  concurrency: Record<string, number>;
+};
+
+export type QueuedWork = {
+  id: number;
+  kind: string;
+  payload: string;
+  priority: number;
+  status: string;
+  assigned_worker_type: string | null;
+  assigned_worker_id: number | null;
+  result: string | null;
+  error: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+};
+
+export const getWorkers = (limit = 50) =>
+  apiGet<{ workers: Worker[]; load_balancer: LoadBalancerStatus; queue: QueuedWork[] }>(`/api/workers?limit=${limit}`);
 
 export const getFinanceReport = (period: string, businessId?: number) =>
   apiGet<FinanceReport>(`/api/finance/report?period=${period}${businessId ? `&business_id=${businessId}` : ""}`);
@@ -216,6 +429,54 @@ export type CorrectionFinding = {
 export const getCorrections = (limit = 20) => apiGet<{ corrections: Correction[] }>(`/api/corrections?limit=${limit}`);
 export const getCorrectionDetail = (id: number) =>
   apiGet<{ correction: Correction; findings: CorrectionFinding[] }>(`/api/corrections/detail?id=${id}`);
+
+export type PaymentLink = {
+  id: number;
+  razorpay_link_id: string;
+  short_url: string;
+  amount_inr: number;
+  description: string;
+  customer_name: string | null;
+  customer_contact: string | null;
+  reference_id: string | null;
+  status: string;
+  created_at: string;
+  last_checked_at: string | null;
+};
+
+export const getPaymentLinks = (limit = 50) =>
+  apiGet<{ payment_links: PaymentLink[]; total_paid_inr: number }>(`/api/payments?limit=${limit}`);
+
+export type WebsiteReview = {
+  id: number;
+  url: string;
+  business_id: number | null;
+  status: string;
+  seo_score: number | null;
+  conversion_score: number | null;
+  ui_score: number | null;
+  deployment_ready: number;
+  findings_count: number;
+  summary: string | null;
+  created_at: string;
+  completed_at: string | null;
+};
+
+export type WebsiteReviewFinding = {
+  id: number;
+  review_id: number;
+  category: string;
+  severity: string;
+  description: string;
+  created_at: string;
+};
+
+export const getWebsiteReviews = (limit = 20) => apiGet<{ reviews: WebsiteReview[] }>(`/api/website-reviews?limit=${limit}`);
+export const getWebsiteReviewDetail = (id: number) =>
+  apiGet<{ review: WebsiteReview; findings: WebsiteReviewFinding[] }>(`/api/website-reviews/detail?id=${id}`);
+
+export type GatewayActivity = { count: number; paid_count: number; last_used: string | null };
+export const getGatewayActivity = () => apiGet<{ gateways: Record<string, GatewayActivity> }>("/api/gateway-activity");
 
 export type HealthSnapshot = {
   id: number;

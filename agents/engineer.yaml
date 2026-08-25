@@ -1,5 +1,6 @@
 id: engineer
 layer: engineering
+squad: "GStack"
 name: Shakthi Engineer
 default_model_tier: local
 local_model: gemma4

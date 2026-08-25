@@ -1,5 +1,6 @@
 id: ceo
 layer: executive
+squad: "Superpower"
 name: Shakthi CEO
 default_model_tier: local
 local_model: gemma4

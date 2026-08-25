@@ -1,5 +1,6 @@
 id: buddy
 layer: business
+squad: "Get Shit Done"
 name: Shakthi Buddy
 default_model_tier: local
 local_model: llama3.2

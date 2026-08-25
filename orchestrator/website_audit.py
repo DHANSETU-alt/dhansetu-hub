@@ -245,7 +245,15 @@ Timestamp:
 
 
 def run_website_audit(url: str, telegram_token: str = None, telegram_chat_id: str = None,
-                       sheets_credentials: str = None, sheets_id: str = None) -> dict:
+                       sheets_credentials: str = None, sheets_id: str = None,
+                       payment_amount_inr: float = None, razorpay_key_id: str = None,
+                       razorpay_key_secret: str = None, customer_name: str = None,
+                       customer_contact: str = None) -> dict:
+    """Offer A (Website Health Audit) end-to-end: run the audit, deliver
+    the report, and -- if a price + Razorpay keys are given -- attach a
+    real payment link for the audit fee. Payment link creation is
+    best-effort: a Razorpay failure never blocks delivering the audit
+    itself, same fail-open pattern as the Telegram/Sheets steps below."""
     from datetime import datetime
 
     home = fetch(url)
@@ -302,16 +310,36 @@ def run_website_audit(url: str, telegram_token: str = None, telegram_chat_id: st
     report_text = format_report(url, scores, load, https, links, headers, timestamp)
     pages_checked = 1 + links["checked"] + (1 if sitemap["present"] else 0) + (1 if robots["present"] else 0)
 
+    payment_link = None
+    payment_error = None
+    if payment_amount_inr and razorpay_key_id and razorpay_key_secret:
+        from . import payments
+        try:
+            payment_link = payments.create_payment_link(
+                razorpay_key_id, razorpay_key_secret, payment_amount_inr,
+                f"Website Health Audit — {url}", customer_name=customer_name,
+                customer_contact=customer_contact, reference_id=f"web-audit:{url}",
+            )
+            report_text += f"\n\nPay for this report (Rs.{payment_amount_inr:.0f}):\n{payment_link['short_url']}"
+        except payments.RazorpayError as e:
+            payment_error = str(e)
+
     with db.get_conn() as conn:
         audit_id = db.insert_audit(conn)
         for category, severity, file_path, description in findings:
             db.insert_audit_finding(conn, audit_id, category, severity, file_path, None, description)
         db.complete_audit(conn, audit_id, scores["website_health_score"], len(findings), pages_checked, report_text)
+        if payment_link:
+            db.insert_payment_link(conn, payment_link["id"], payment_link["short_url"], payment_link["amount_inr"],
+                                    f"Website Health Audit — {url}", customer_name=customer_name,
+                                    customer_contact=customer_contact, reference_id=f"web-audit:{url}",
+                                    status=payment_link["status"])
 
     result = {
         "audit_id": audit_id, "url": url, "scores": scores, "findings_count": len(findings),
         "pages_checked": pages_checked, "report_text": report_text, "timestamp": timestamp,
         "telegram_sent": False, "sheets_synced": False,
+        "payment_link": payment_link["short_url"] if payment_link else None, "payment_error": payment_error,
         "checks": {"homepage_load": load, "https": https, "mobile": mobile, "seo": seo, "accessibility": a11y,
                    "security_headers": headers, "broken_links": links, "sitemap": sitemap, "robots_txt": robots},
     }
