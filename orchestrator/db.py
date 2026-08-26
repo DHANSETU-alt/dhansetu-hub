@@ -1609,3 +1609,81 @@ def attendance_for_range(conn, owner_email: str, date_from: str, date_to: str) -
         (owner_email, date_from, date_to),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# --- Trading OS (Task 6) ----------------------------------------------------
+
+def insert_strategy(conn, name: str, symbol: str, rule_type: str, params: dict) -> int:
+    cur = conn.execute(
+        "INSERT INTO trading_strategies (name, symbol, rule_type, params) VALUES (?, ?, ?, ?)",
+        (name, symbol, rule_type, json.dumps(params)),
+    )
+    return cur.lastrowid
+
+
+def list_strategies(conn, status: str = None) -> list:
+    query, params = "SELECT * FROM trading_strategies", []
+    if status:
+        query += " WHERE status = ?"; params.append(status)
+    query += " ORDER BY id ASC"
+    rows = [dict(r) for r in conn.execute(query, params).fetchall()]
+    for r in rows:
+        r["params"] = json.loads(r["params"])
+    return rows
+
+
+def set_strategy_status(conn, strategy_id: int, status: str):
+    conn.execute("UPDATE trading_strategies SET status = ? WHERE id = ?", (status, strategy_id))
+
+
+def get_open_position(conn, strategy_id: int):
+    row = conn.execute(
+        "SELECT * FROM paper_positions WHERE strategy_id = ? AND status = 'open' ORDER BY id DESC LIMIT 1",
+        (strategy_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def open_position(conn, strategy_id: int, symbol: str, quantity: float, entry_price: float) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO paper_positions (strategy_id, symbol, quantity, entry_price)
+        VALUES (?, ?, ?, ?)
+        """,
+        (strategy_id, symbol, quantity, entry_price),
+    )
+    return cur.lastrowid
+
+
+def close_position(conn, position_id: int, exit_price: float):
+    conn.execute(
+        "UPDATE paper_positions SET exit_price = ?, status = 'closed', closed_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (exit_price, position_id),
+    )
+
+
+def list_positions(conn, status: str = None) -> list:
+    query, params = "SELECT * FROM paper_positions", []
+    if status:
+        query += " WHERE status = ?"; params.append(status)
+    query += " ORDER BY id DESC"
+    return [dict(r) for r in conn.execute(query, params).fetchall()]
+
+
+def insert_journal_entry(conn, position_id: int, strategy_id: int, symbol: str, action: str,
+                          quantity: float, price: float, reason: str, pnl: float = None) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO trading_journal (position_id, strategy_id, symbol, action, quantity, price, pnl, reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (position_id, strategy_id, symbol, action, quantity, price, pnl, reason),
+    )
+    return cur.lastrowid
+
+
+def list_journal(conn, limit: int = 100) -> list:
+    rows = conn.execute(
+        "SELECT * FROM trading_journal ORDER BY id DESC LIMIT ?", (limit,)
+    ).fetchall()
+    return [dict(r) for r in rows]

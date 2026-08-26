@@ -800,3 +800,48 @@ CREATE TABLE IF NOT EXISTS peopledesk_attendance (
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(staff_id, attendance_date)
 );
+
+-- Trading OS (Task 6) -- Phase 1 per a real CEO decision (decisions#12):
+-- crypto spot ONLY, paper trading ONLY (simulated fills against real
+-- market prices, never a real broker order), one asset class before
+-- expanding. Nifty options and real broker execution are explicit later
+-- phases, not built here. Every simulated trade is auto-journaled --
+-- the founder's own explicit requirement.
+CREATE TABLE IF NOT EXISTS trading_strategies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  symbol TEXT NOT NULL,                    -- e.g. 'BTCUSDT' -- a real Binance pair
+  rule_type TEXT NOT NULL,                 -- sma_crossover | rsi_threshold
+  params TEXT NOT NULL,                    -- JSON, shape depends on rule_type
+  status TEXT NOT NULL DEFAULT 'active',   -- active | paused
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS paper_positions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  strategy_id INTEGER NOT NULL REFERENCES trading_strategies(id),
+  symbol TEXT NOT NULL,
+  quantity REAL NOT NULL,
+  entry_price REAL NOT NULL,
+  exit_price REAL,
+  status TEXT NOT NULL DEFAULT 'open',     -- open | closed
+  opened_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  closed_at TEXT
+);
+
+-- Trading journal -- append-only, every simulated fill (entry and exit),
+-- never edited or deleted. pnl is in the pair's real quote currency
+-- (USDT for a *USDT pair) -- never mislabeled as INR, that would be a
+-- real correctness bug, not a display choice.
+CREATE TABLE IF NOT EXISTS trading_journal (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  position_id INTEGER NOT NULL REFERENCES paper_positions(id),
+  strategy_id INTEGER NOT NULL REFERENCES trading_strategies(id),
+  symbol TEXT NOT NULL,
+  action TEXT NOT NULL,                    -- entry | exit
+  quantity REAL NOT NULL,
+  price REAL NOT NULL,
+  pnl REAL,                                -- set only on exit, in quote currency
+  reason TEXT NOT NULL,                    -- what triggered this, e.g. "SMA10 crossed above SMA30"
+  executed_at TEXT DEFAULT CURRENT_TIMESTAMP
+);

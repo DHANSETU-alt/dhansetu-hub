@@ -29,7 +29,7 @@ const TIERS = [
 const REAL_PAYU_LINK = "https://u.payu.in/xJYCpF9eG4sc";
 
 export default function BlackboxPricingPage() {
-  const [gateway, setGateway] = useState<"razorpay" | "payu">("razorpay");
+  const [gateway, setGateway] = useState<"razorpay" | "payu">("payu");
   const [email, setEmail] = useState("");
   const [razorpayKeyId, setRazorpayKeyId] = useState("");
   const [razorpaySecret, setRazorpaySecret] = useState("");
@@ -115,8 +115,8 @@ export default function BlackboxPricingPage() {
             className="w-full rounded-lg border border-[#2a3040] bg-[#0a0c10] px-3 py-2 text-sm mb-3"
           />
           <div className="flex gap-2 mb-3">
-            <button onClick={() => setGateway("razorpay")} className={`text-xs px-3 py-1.5 rounded-full border ${gateway === "razorpay" ? "border-[#dba956] text-[#dba956]" : "border-[#2a3040] text-[#8b95a6]"}`}>Razorpay</button>
             <button onClick={() => setGateway("payu")} className={`text-xs px-3 py-1.5 rounded-full border ${gateway === "payu" ? "border-[#dba956] text-[#dba956]" : "border-[#2a3040] text-[#8b95a6]"}`}>PayU</button>
+            <button onClick={() => setGateway("razorpay")} className={`text-xs px-3 py-1.5 rounded-full border ${gateway === "razorpay" ? "border-[#dba956] text-[#dba956]" : "border-[#2a3040] text-[#8b95a6]"}`}>Razorpay</button>
           </div>
 
           {error && <p className="text-xs text-[#f87171] mb-3">{error}</p>}

@@ -108,9 +108,12 @@ def scan_api_key_exposure() -> list:
     """Reuses audit.py's exact codebase secret-pattern scan -- one
     detector, not two copies that could drift. Scans orchestrator/**/*.py
     (the platform's own source), not business-generated content -- that's
-    review()'s job, above."""
+    review()'s job, above. Deliberately excludes tests/: fixtures there
+    embed dummy secrets and dangerous-call strings on purpose to test
+    this same detector, and flagging those as real exposures cratered
+    every posture score to 0 without an actual leak in live code."""
     from . import audit as audit_mod
-    files = audit_mod._python_files()
+    files = audit_mod._orchestrator_files()
     sources = audit_mod._read_all(files)
     return [f for f in audit_mod.check_security(sources) if f["category"] == "security"]
 

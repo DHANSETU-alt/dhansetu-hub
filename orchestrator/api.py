@@ -262,6 +262,39 @@ def memory(qs):
         return {"entries": db.list_all_memory(conn, layer=layer, limit=100)}
 
 
+@route("/api/trading/strategies")
+def trading_strategies(qs):
+    status = qs.get("status", [None])[0]
+    with db.get_conn() as conn:
+        return {"strategies": db.list_strategies(conn, status=status)}
+
+
+@route("/api/trading/positions")
+def trading_positions(qs):
+    status = qs.get("status", [None])[0]
+    with db.get_conn() as conn:
+        return {"positions": db.list_positions(conn, status=status)}
+
+
+@route("/api/trading/journal")
+def trading_journal(qs):
+    limit = _qs_int(qs, "limit") or 100
+    with db.get_conn() as conn:
+        return {"journal": db.list_journal(conn, limit=limit)}
+
+
+@route("/api/trading/price")
+def trading_price(qs):
+    symbol = qs.get("symbol", [None])[0]
+    if not symbol:
+        return {"error": "symbol is required"}
+    from . import market_data
+    try:
+        return {"symbol": symbol, "price": market_data.current_price(symbol)}
+    except market_data.MarketDataError as e:
+        return {"error": str(e)}
+
+
 @route("/api/peopledesk/staff")
 def peopledesk_staff(qs):
     owner_email = qs.get("owner_email", [None])[0]

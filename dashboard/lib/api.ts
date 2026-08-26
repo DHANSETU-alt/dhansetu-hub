@@ -206,6 +206,49 @@ export const getPeopledeskPayroll = (ownerEmail: string, dateFrom: string, dateT
     `/api/peopledesk/payroll?owner_email=${encodeURIComponent(ownerEmail)}&date_from=${dateFrom}&date_to=${dateTo}`
   );
 
+export type TradingStrategy = {
+  id: number;
+  name: string;
+  symbol: string;
+  rule_type: "sma_crossover" | "rsi_threshold";
+  params: Record<string, number>;
+  status: "active" | "paused";
+  created_at: string;
+};
+export const getTradingStrategies = () => apiGet<{ strategies: TradingStrategy[] }>("/api/trading/strategies");
+
+export type PaperPosition = {
+  id: number;
+  strategy_id: number;
+  symbol: string;
+  quantity: number;
+  entry_price: number;
+  exit_price: number | null;
+  status: "open" | "closed";
+  opened_at: string;
+  closed_at: string | null;
+};
+export const getTradingPositions = (status?: string) =>
+  apiGet<{ positions: PaperPosition[] }>(`/api/trading/positions${status ? `?status=${status}` : ""}`);
+
+export type TradingJournalEntry = {
+  id: number;
+  position_id: number;
+  strategy_id: number;
+  symbol: string;
+  action: "entry" | "exit";
+  quantity: number;
+  price: number;
+  pnl: number | null;
+  reason: string;
+  executed_at: string;
+};
+export const getTradingJournal = (limit = 100) =>
+  apiGet<{ journal: TradingJournalEntry[] }>(`/api/trading/journal?limit=${limit}`);
+
+export const getTradingPrice = (symbol: string) =>
+  apiGet<{ symbol: string; price: number; error?: string }>(`/api/trading/price?symbol=${symbol}`);
+
 export const getDecisions = (limit = 20) => apiGet<{ decisions: Decision[] }>(`/api/ceo/decisions?limit=${limit}`);
 
 export type CeoHealth = {

@@ -27,6 +27,7 @@ from . import config, db, model_gateway
 from . import security as security_mod
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+_SEARCH_REPLACE_RE = re.compile(r"<{5,}\s*SEARCH\s*\n(.*?)\n={5,}\s*\n(.*?)\n>{5,}\s*REPLACE", re.DOTALL)
 
 # P0-P4, not "critical/high/medium/low" -- an explicit incident-management-
 # style scale, ordered worst-first so SEVERITY_ORDER[x] < SEVERITY_ORDER[y]
@@ -61,6 +62,31 @@ def _parse_json_block(text: str):
         return json.loads(match.group(1))
     except json.JSONDecodeError:
         return None
+
+
+def _parse_search_replace(text: str):
+    """Extract a single SEARCH/REPLACE block -- takes the LAST one if a
+    model emits more than one, same "last fenced block wins" precedent as
+    _parse_json_block. Returns (old, new) or None if no block is found."""
+    match = None
+    for match in _SEARCH_REPLACE_RE.finditer(text):
+        pass
+    if not match:
+        return None
+    return match.group(1), match.group(2)
+
+
+def _apply_search_replace(source: str, old: str, new: str) -> str:
+    """The actual fix for propose_patch()'s full-file-rewrite timeout
+    (PROJECT_STATUS.md's top open bug: a local model reliably times out
+    generating a complete large file). Asking for one targeted edit
+    instead means a small, fast model output regardless of file size.
+    Requires an exact, unique match -- an ambiguous or missing SEARCH
+    snippet is a real failure to surface, not something to guess through."""
+    occurrences = source.count(old)
+    if occurrences != 1:
+        raise ValueError(f"SEARCH text matched {occurrences} time(s), expected exactly 1")
+    return source.replace(old, new, 1)
 
 
 def new_pipeline_task(conn, goal: str) -> int:
@@ -240,10 +266,30 @@ def propose_patch(bug_id: int) -> dict:
             f"Bug #{bug_id}: {bug['title']}\nRoot cause: {bug['root_cause']}\n"
             f"Fix recommendation: {bug['fix_recommendation']}\nFile: {bug['file_path']}\n\n"
             f"Current file content:\n{source_excerpt}\n\n"
-            "Write the corrected, COMPLETE file content implementing the fix. "
-            "No commentary, no markdown fences — just the raw file content."
+            "Do not rewrite the whole file -- regenerating a complete large file is slow and has "
+            "caused real timeouts. Reply with EXACTLY ONE block in this exact format and nothing "
+            "else:\n"
+            "<<<<<<< SEARCH\n"
+            "(the exact original lines to change, copied verbatim from the file above, including "
+            "indentation)\n"
+            "=======\n"
+            "(the replacement lines)\n"
+            ">>>>>>> REPLACE\n"
+            "The SEARCH text must appear exactly once in the file above."
         )
-        patched_content = call_agent(conn, task_id, "engineer", prompt)
+        response = call_agent(conn, task_id, "engineer", prompt)
+
+        parsed = _parse_search_replace(response)
+        if not parsed:
+            db.update_task(conn, task_id, "failed", "engineer did not return a parseable SEARCH/REPLACE block")
+            raise ValueError(f"bug #{bug_id}: engineer response had no SEARCH/REPLACE block")
+        try:
+            patched_content = _apply_search_replace(source_excerpt, *parsed)
+        except ValueError as e:
+            db.update_task(conn, task_id, "failed", str(e))
+            raise ValueError(f"bug #{bug_id}: {e} -- the model's proposed change didn't uniquely "
+                              f"match {bug['file_path']}") from e
+
         db.update_task(conn, task_id, "done", "(patch proposed — see staged file, not applied)")
 
         staged_name = (bug["file_path"] or "proposed_fix.txt").replace("/", "__")

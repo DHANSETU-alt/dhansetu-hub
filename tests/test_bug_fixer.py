@@ -90,5 +90,53 @@ class TestJsonBlockParsing(unittest.TestCase):
         self.assertIsNone(bug_fixer._parse_json_block("just plain text, no fence"))
 
 
+class TestSearchReplaceParsing(unittest.TestCase):
+    """propose_patch()'s fix for the full-file-rewrite timeout
+    (PROJECT_STATUS.md's top open bug): a targeted SEARCH/REPLACE block
+    instead of asking the model to regenerate an entire file."""
+
+    def test_parses_valid_block(self):
+        text = (
+            "Here's the fix.\n"
+            "<<<<<<< SEARCH\n"
+            "    return a - b\n"
+            "=======\n"
+            "    return a + b\n"
+            ">>>>>>> REPLACE\n"
+        )
+        parsed = bug_fixer._parse_search_replace(text)
+        self.assertEqual(parsed, ("    return a - b", "    return a + b"))
+
+    def test_returns_none_with_no_block(self):
+        self.assertIsNone(bug_fixer._parse_search_replace("just plain text, no markers"))
+
+    def test_returns_none_on_incomplete_block(self):
+        text = "<<<<<<< SEARCH\nold\n======= \nnew\n"  # missing REPLACE marker
+        self.assertIsNone(bug_fixer._parse_search_replace(text))
+
+    def test_takes_last_block_if_multiple(self):
+        text = (
+            "<<<<<<< SEARCH\nfirst_old\n=======\nfirst_new\n>>>>>>> REPLACE\n"
+            "<<<<<<< SEARCH\nsecond_old\n=======\nsecond_new\n>>>>>>> REPLACE\n"
+        )
+        self.assertEqual(bug_fixer._parse_search_replace(text), ("second_old", "second_new"))
+
+
+class TestApplySearchReplace(unittest.TestCase):
+    def test_applies_unique_match(self):
+        source = "def add(a, b):\n    return a - b\n"
+        result = bug_fixer._apply_search_replace(source, "    return a - b", "    return a + b")
+        self.assertEqual(result, "def add(a, b):\n    return a + b\n")
+
+    def test_raises_on_no_match(self):
+        with self.assertRaises(ValueError):
+            bug_fixer._apply_search_replace("def add(a, b):\n    return a - b\n", "nonexistent line", "x")
+
+    def test_raises_on_ambiguous_match(self):
+        source = "x = 1\nx = 1\n"
+        with self.assertRaises(ValueError):
+            bug_fixer._apply_search_replace(source, "x = 1", "x = 2")
+
+
 if __name__ == "__main__":
     unittest.main()

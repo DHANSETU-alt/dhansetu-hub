@@ -58,6 +58,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { href: "/websites", label: "Website Monitoring" },
       { href: "/pdf-studio", label: "Dhansetu PDF Studio" },
       { href: "/peopledesk", label: "Dhansetu PeopleDesk" },
+      { href: "/trading", label: "Trading OS (paper)" },
       { href: "/dhansetu-ai", label: "Dhansetu AI" },
     ],
   },

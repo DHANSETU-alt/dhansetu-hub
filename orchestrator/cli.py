@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import access, alerts, audit, bug_fixer, buddy, ceo, chrome_developer, config, correction_bot, db, dhansetu_ai, failure_analysis, finance, incident_manager, incident_scheduler, initiatives, knowledge, team_register, load_manager, marketing, onboarding, pa_angella, payment_gateway_manager, payments, pdf_studio, peopledesk, pricing, prompt_engine, registry, routing, sales, security, sentinel, sheets, sitegen, skill_test, template_registry, voice, voice_history, website_audit, website_builder, worker_pool
+from . import access, alerts, audit, bug_fixer, buddy, ceo, chrome_developer, config, correction_bot, db, dhansetu_ai, failure_analysis, finance, incident_manager, incident_scheduler, initiatives, knowledge, team_register, load_manager, marketing, market_data, onboarding, pa_angella, payment_gateway_manager, payments, pdf_studio, peopledesk, pricing, prompt_engine, registry, routing, sales, security, sentinel, sheets, sitegen, skill_test, template_registry, trading_engine, voice, voice_history, website_audit, website_builder, worker_pool
 from . import telegram as tg
 from . import telegram_service as ts
 from .tools.registry import TOOL_REGISTRY
@@ -140,6 +140,22 @@ def _cmd_alerts_sweep(token, chat_id):
     print(f"Alert sweep complete: {total} alert message(s) sent")
     for category, count in sent.items():
         print(f"  {category}: {count}")
+
+
+def _cmd_security_alert_check(token, chat_id):
+    token, chat_id = ts.resolve_credentials(token, chat_id)
+    sent = alerts.run_security_posture_check(token, chat_id)
+    count = sent["security_posture"]
+    print(f"Security posture alert check complete: {count} message(s) sent" if count
+          else "Security posture alert check complete: no new drop to report")
+
+
+def _cmd_sentinel_alert_check(token, chat_id):
+    token, chat_id = ts.resolve_credentials(token, chat_id)
+    sent = alerts.run_sentinel_alert_check(token, chat_id)
+    count = sent["sentinel"]
+    print(f"Sentinel alert check complete: {count} message(s) sent" if count
+          else "Sentinel alert check complete: nothing to report")
 
 
 def _cmd_bug_report(title, description, severity):
@@ -857,6 +873,50 @@ def _cmd_peopledesk_payroll(owner_email, date_from, date_to):
     print(json.dumps({"summary": peopledesk.payroll_summary(owner_email, date_from, date_to)}, default=str))
 
 
+def _cmd_strategy_add(name, symbol, rule_type, params_json):
+    try:
+        params = json.loads(params_json)
+        strategy = trading_engine.create_strategy(name, symbol, rule_type, params)
+    except (trading_engine.TradingEngineError, json.JSONDecodeError) as e:
+        print(json.dumps({"error": str(e)}))
+        return
+    print(json.dumps(strategy, default=str))
+
+
+def _cmd_strategies_list(status):
+    print(json.dumps({"strategies": trading_engine.list_strategies(status=status)}, default=str))
+
+
+def _cmd_strategy_status(strategy_id, status):
+    try:
+        trading_engine.set_strategy_status(strategy_id, status)
+    except trading_engine.TradingEngineError as e:
+        print(json.dumps({"error": str(e)}))
+        return
+    print(json.dumps({"ok": True}))
+
+
+def _cmd_trading_check():
+    print(json.dumps({"results": trading_engine.run_signal_check()}, default=str))
+
+
+def _cmd_trading_positions(status):
+    print(json.dumps({"positions": trading_engine.list_positions(status=status)}, default=str))
+
+
+def _cmd_trading_journal(limit):
+    print(json.dumps({"journal": trading_engine.list_journal(limit=limit)}, default=str))
+
+
+def _cmd_trading_price(symbol):
+    try:
+        price = market_data.current_price(symbol)
+    except market_data.MarketDataError as e:
+        print(json.dumps({"error": str(e)}))
+        return
+    print(json.dumps({"symbol": symbol, "price": price}))
+
+
 def _cmd_chat_message(agent_id, message):
     result = routing.run_task(agent_id, message)
     print(json.dumps({"task_id": result["task_id"], "reply": result["output"]}, default=str))
@@ -1023,6 +1083,10 @@ def main():
     parser.add_argument("--tax-rate", type=float, default=None, help="Fraction, e.g. 0.18 — defaults to SHAKTHI_DEFAULT_TAX_RATE (0.18)")
 
     parser.add_argument("--alerts-sweep", action="store_true", help="Check all alert categories and send only what's new to Telegram")
+    parser.add_argument("--security-alert-check", action="store_true",
+                         help="Standalone security-posture alert: Telegram-alerts only when the latest --security-scan score isn't 100, using its own dedup state (unlike --alerts-sweep, never dumps unrelated historical backlog)")
+    parser.add_argument("--sentinel-alert-check", action="store_true",
+                         help="Standalone sentinel alert: Telegram-alerts only on the latest --sentinel-check snapshot's real thresholds (disk/CPU/RAM/Ollama/DB/internet), using its own dedup state (unlike --alerts-sweep, never dumps unrelated historical backlog)")
 
     parser.add_argument("--bug-report", metavar="TITLE", help="Manually file a bug")
     parser.add_argument("--description", default="")
@@ -1245,6 +1309,21 @@ def main():
     parser.add_argument("--attendance-date", default=None, help="YYYY-MM-DD")
     parser.add_argument("--attendance-status", choices=["present", "absent", "half_day", "leave"], default=None)
 
+    parser.add_argument("--strategy-add", action="store_true", help="Trading OS: create a paper-trading strategy. Requires --strategy-name/--strategy-symbol/--strategy-rule-type/--strategy-params")
+    parser.add_argument("--strategy-name", default=None)
+    parser.add_argument("--strategy-symbol", default=None, help="e.g. BTCUSDT")
+    parser.add_argument("--strategy-rule-type", choices=["sma_crossover", "rsi_threshold"], default=None)
+    parser.add_argument("--strategy-params", default=None, help="JSON, e.g. '{\"fast_period\":10,\"slow_period\":30,\"trade_quantity\":0.001}'")
+    parser.add_argument("--strategies-list", action="store_true")
+    parser.add_argument("--strategy-status", type=int, default=None, metavar="STRATEGY_ID")
+    parser.add_argument("--strategy-set-status", choices=["active", "paused"], default=None)
+    parser.add_argument("--trading-check", action="store_true", help="Run one real signal-check pass across all active strategies")
+    parser.add_argument("--trading-positions", action="store_true")
+    parser.add_argument("--position-status", choices=["open", "closed"], default=None, help="Filter for --trading-positions")
+    parser.add_argument("--trading-journal", action="store_true")
+    parser.add_argument("--trading-price", default=None, metavar="SYMBOL", help="e.g. BTCUSDT")
+    parser.add_argument("--journal-limit", type=int, default=100)
+
     parser.add_argument("--knowledge-add", metavar="TITLE")
     parser.add_argument("--content", default="")
     parser.add_argument("--tags", default="")
@@ -1330,6 +1409,10 @@ def _dispatch(args):
         return _cmd_sheets_sync(args.sheets_credentials, args.sheets_id, args.sheets_period, tax_rate)
     if args.alerts_sweep:
         return _cmd_alerts_sweep(args.telegram_token, args.telegram_chat_id)
+    if args.security_alert_check:
+        return _cmd_security_alert_check(args.telegram_token, args.telegram_chat_id)
+    if args.sentinel_alert_check:
+        return _cmd_sentinel_alert_check(args.telegram_token, args.telegram_chat_id)
     if args.bug_report:
         return _cmd_bug_report(args.bug_report, args.description, args.severity)
     if args.bug_scan:
@@ -1578,6 +1661,27 @@ def _dispatch(args):
         return _cmd_failure_analyses_list(args.failure_status)
     if args.chat_message:
         return _cmd_chat_message(args.chat_agent, args.chat_message)
+
+    if args.strategy_add:
+        if not (args.strategy_name and args.strategy_symbol and args.strategy_rule_type and args.strategy_params):
+            print(json.dumps({"error": "--strategy-add requires --strategy-name, --strategy-symbol, --strategy-rule-type, --strategy-params"}))
+            return
+        return _cmd_strategy_add(args.strategy_name, args.strategy_symbol, args.strategy_rule_type, args.strategy_params)
+    if args.strategies_list:
+        return _cmd_strategies_list(None)
+    if args.strategy_status is not None:
+        if not args.strategy_set_status:
+            print(json.dumps({"error": "--strategy-status requires --strategy-set-status"}))
+            return
+        return _cmd_strategy_status(args.strategy_status, args.strategy_set_status)
+    if args.trading_check:
+        return _cmd_trading_check()
+    if args.trading_positions:
+        return _cmd_trading_positions(args.position_status)
+    if args.trading_journal:
+        return _cmd_trading_journal(args.journal_limit)
+    if args.trading_price:
+        return _cmd_trading_price(args.trading_price)
 
     if args.peopledesk_add_staff:
         if not (args.owner_email and args.staff_name):

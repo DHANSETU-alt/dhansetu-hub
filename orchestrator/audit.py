@@ -37,6 +37,17 @@ def _python_files() -> list:
     return sorted(files)
 
 
+def _orchestrator_files() -> list:
+    """Live platform source only, no tests/ -- for scans where a dummy
+    secret or dangerous-pattern string inside a test fixture (there to
+    test the detector itself) must not count as a real exposure."""
+    root = bft.codebase_root()
+    base = root / "orchestrator"
+    if not base.exists():
+        return []
+    return sorted(p for p in base.rglob("*.py") if "__pycache__" not in p.parts)
+
+
 def _read_all(files: list) -> dict:
     return {f: f.read_text(errors="replace") for f in files}
 

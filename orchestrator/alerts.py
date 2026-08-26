@@ -313,9 +313,33 @@ def check_worker_critical_resource(conn, state: dict) -> list:
     return []
 
 
+def check_security_posture(conn, state: dict) -> list:
+    """Watches security_posture_scan()'s (OPS-002) platform-wide runs --
+    business_id IS NULL rows specifically, since review()'s per-business
+    scans share this same table with a different meaning. Alerts once per
+    new scan, and only when the score isn't a clean 100 -- something
+    calling --security-scan on a schedule is what actually produces new
+    rows here; this check just makes sure a drop doesn't sit silent in
+    the DB until someone happens to open the dashboard."""
+    row = conn.execute("SELECT * FROM security_reports WHERE business_id IS NULL ORDER BY id DESC LIMIT 1").fetchone()
+    if not row:
+        return []
+    row = dict(row)
+    last_id = state.get("security_posture_last_id", 0)
+    if row["id"] <= last_id:
+        return []
+    state["security_posture_last_id"] = row["id"]
+    if row["score"] >= 100:
+        return []
+    findings = json.loads(row["findings"] or "[]")
+    findings_line = "; ".join(f"{f.get('type')}: {f.get('check')}" for f in findings[:5]) or "no findings listed"
+    return [f"Security posture score is {row['score']}/100 -- {findings_line}"]
+
+
 CHECKS = {
     "revenue": check_revenue,
     "security": check_security,
+    "security_posture": check_security_posture,
     "website_downtime": check_website_downtime,
     "agent_failures": check_agent_failures,
     "critical_ceo_decisions": check_critical_ceo_decisions,
@@ -333,6 +357,42 @@ CHECKS = {
     "queue_overflow": check_queue_overflow,
     "worker_critical_resource": check_worker_critical_resource,
 }
+
+
+def run_security_posture_check(token: str, chat_id: str) -> dict:
+    """Scoped, standalone version of the security_posture category --
+    reads/writes the same .alerts_sync_state.json (only its own
+    "security_posture_last_id" key), but doesn't touch or evaluate any of
+    the other 17 CHECKS categories. Deliberately separate from
+    run_sweep()/--alerts-sweep: that sweep has never been run on this
+    machine, so its per-category state is unseeded and it would dump
+    years of historical backlog (old bugs, old CEO decisions, old voice
+    denials...) the first time it runs -- exactly what a 24/7 security-
+    score cron job must not do. Wire this into cron instead."""
+    state = _load_state()
+    with db.get_conn() as conn:
+        messages = check_security_posture(conn, state)
+    _save_state(state)
+    if messages:
+        ts.alert(token, chat_id, "security_posture", "\n".join(f"- {m}" for m in messages))
+    return {"security_posture": len(messages)}
+
+
+def run_sentinel_alert_check(token: str, chat_id: str) -> dict:
+    """Standalone version of the sentinel category, same reasoning as
+    run_security_posture_check() above: reuses the existing check_sentinel
+    threshold logic and the same .alerts_sync_state.json (only its own
+    "sentinel_last_snapshot_id" key), but never touches the other 17
+    CHECKS categories or their unseeded historical backlog. Pair with a
+    cron entry that runs --sentinel-check first to produce a fresh
+    snapshot -- this only reads the latest one, it doesn't collect."""
+    state = _load_state()
+    with db.get_conn() as conn:
+        messages = check_sentinel(conn, state)
+    _save_state(state)
+    if messages:
+        ts.alert(token, chat_id, "sentinel", "\n".join(f"- {m}" for m in messages))
+    return {"sentinel": len(messages)}
 
 
 def run_sweep(token: str, chat_id: str) -> dict:

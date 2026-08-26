@@ -13,6 +13,9 @@ echo
 echo "Opening dashboard in Chrome..."
 open -a "Google Chrome" "http://localhost:3000" 2>/dev/null || open "http://localhost:3000"
 
+echo "Opening LAUNCH_CHECKLIST.md (last session's notes)..."
+open "LAUNCH_CHECKLIST.md"
+
 echo
 echo "SHAKTHI OS is running. You can close this window -- the servers keep running."
 echo "To stop everything later, double-click Stop_Shakthi_OS.command."
