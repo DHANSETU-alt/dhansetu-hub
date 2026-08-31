@@ -1,6 +1,6 @@
 id: business_analyst
 layer: business
-squad: "BlackBoxOps Onboarding"
+squad: "Get Shit Done"
 name: BlackBoxOps Business Analyst
 default_model_tier: local
 local_model: llama3.2

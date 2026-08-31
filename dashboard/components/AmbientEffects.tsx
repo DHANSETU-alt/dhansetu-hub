@@ -23,6 +23,11 @@ export function MatrixRain() {
     const fontSize = 15;
     let width = 0, height = 0, columns = 0, drops: number[] = [];
     const glyphs = "アイウエオカキクケコサシスセソ0123456789SHAKTHI";
+    // Real matrix green, per the Executive Neural Network spec (§3) --
+    // previously a teal/emerald that read as "brand accent," not "code rain."
+    const GREENS = ["rgba(0,255,102,0.85)", "rgba(0,255,136,0.85)", "rgba(34,255,136,0.85)"];
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     function resize() {
       if (!canvas) return;
@@ -34,22 +39,35 @@ export function MatrixRain() {
     resize();
     window.addEventListener("resize", resize);
 
+    // Brighter near the outer edges (columns closer to either side), dimmer
+    // toward center -- keeps the middle of the screen from competing with
+    // foreground panels while the frame still reads as "alive" (spec §3).
+    function edgeAlpha(colIndex: number): number {
+      const centerDist = Math.abs(colIndex / columns - 0.5) * 2; // 0 center -> 1 edge
+      return 0.4 + centerDist * 0.5;
+    }
+
     let raf = 0;
     function draw() {
       if (!ctx) return;
-      ctx.fillStyle = "rgba(5,7,10,0.09)";
+      ctx.fillStyle = "rgba(2,3,3,0.09)";
       ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "rgba(52,211,153,0.6)";
       ctx.font = `${fontSize}px monospace`;
       for (let i = 0; i < drops.length; i++) {
         const glyph = glyphs[Math.floor(Math.random() * glyphs.length)];
+        ctx.globalAlpha = edgeAlpha(i);
+        ctx.fillStyle = GREENS[(i + Math.floor(drops[i])) % GREENS.length];
         ctx.fillText(glyph, i * fontSize, drops[i] * fontSize);
         if (drops[i] * fontSize > height && Math.random() > 0.975) drops[i] = 0;
         drops[i]++;
       }
-      raf = requestAnimationFrame(draw);
+      ctx.globalAlpha = 1;
+      if (!reduceMotion) raf = requestAnimationFrame(draw);
     }
-    raf = requestAnimationFrame(draw);
+
+    // Reduced motion: draw one static frame and stop -- still reads as
+    // matrix rain, no continuous work (spec §3).
+    draw();
 
     return () => {
       cancelAnimationFrame(raf);
@@ -61,7 +79,7 @@ export function MatrixRain() {
     <canvas
       ref={canvasRef}
       className="absolute inset-0 w-full h-full"
-      style={{ opacity: 0.16, pointerEvents: "none" }}
+      style={{ pointerEvents: "none" }}
     />
   );
 }

@@ -332,6 +332,37 @@ def latest_security_report(conn, business_id: int | None = None):
     return dict(row) if row else None
 
 
+# --- AI Watchdog -------------------------------------------------------
+
+def insert_watchdog_event(conn, category: str, severity: str, detail: str) -> int:
+    cur = conn.execute(
+        "INSERT INTO watchdog_events (category, severity, detail) VALUES (?, ?, ?)",
+        (category, severity, detail),
+    )
+    return cur.lastrowid
+
+
+def recent_watchdog_events(conn, since_id: int = 0, limit: int = 200):
+    rows = conn.execute(
+        "SELECT * FROM watchdog_events WHERE id > ? ORDER BY id DESC LIMIT ?",
+        (since_id, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_file_hash(conn, path: str):
+    row = conn.execute("SELECT sha256 FROM watchdog_file_hashes WHERE path = ?", (path,)).fetchone()
+    return row["sha256"] if row else None
+
+
+def set_file_hash(conn, path: str, sha256: str):
+    conn.execute(
+        "INSERT INTO watchdog_file_hashes (path, sha256, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+        "ON CONFLICT(path) DO UPDATE SET sha256 = excluded.sha256, updated_at = CURRENT_TIMESTAMP",
+        (path, sha256),
+    )
+
+
 # --- Phase 0.2: dashboard helpers ------------------------------------------
 
 def active_task_count(conn):
@@ -1176,6 +1207,44 @@ def list_lead_events(conn, lead_id: int, limit: int = 50):
     return [dict(r) for r in rows]
 
 
+# --- Client Success ------------------------------------------------------
+
+def insert_client_health_score(conn, lead_id: int, business_id, score: int, signals_json: str) -> int:
+    cur = conn.execute(
+        "INSERT INTO client_health_scores (lead_id, business_id, score, signals) VALUES (?, ?, ?, ?)",
+        (lead_id, business_id, score, signals_json),
+    )
+    return cur.lastrowid
+
+
+def latest_client_health_score(conn, lead_id: int):
+    row = conn.execute(
+        "SELECT * FROM client_health_scores WHERE lead_id = ? ORDER BY id DESC LIMIT 1", (lead_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def list_client_health_scores(conn, since_id: int = 0, limit: int = 100):
+    rows = conn.execute(
+        "SELECT * FROM client_health_scores WHERE id > ? ORDER BY id DESC LIMIT ?", (since_id, limit)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def log_client_health_event(conn, lead_id: int, event_type: str, payload: str = "", task_id: int = None):
+    conn.execute(
+        "INSERT INTO client_health_events (lead_id, event_type, payload, task_id) VALUES (?, ?, ?, ?)",
+        (lead_id, event_type, payload, task_id),
+    )
+
+
+def list_client_health_events(conn, lead_id: int, limit: int = 50):
+    rows = conn.execute(
+        "SELECT * FROM client_health_events WHERE lead_id = ? ORDER BY id DESC LIMIT ?", (lead_id, limit)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 # --- Marketing / content queue ------------------------------------------
 
 def insert_content(conn, business_id, content_type: str, variant_label: str, target: str,
@@ -1443,11 +1512,16 @@ def list_business_discoveries(conn, status: str = None, limit: int = 50):
 
 # --- Initiative tracker (founder-facing "Task 1, Task 2, ...") -----------
 
-def insert_initiative(conn, title: str, artifact_url: str = None) -> int:
-    next_seq = conn.execute("SELECT COALESCE(MAX(seq), 0) + 1 FROM initiatives").fetchone()[0]
+def insert_initiative(conn, title: str, artifact_url: str = None, track: str = "task") -> int:
+    """track: 'task' (web-based work, Task N) or 'project' (big cross-platform
+    software dev -- Mac/Windows/Linux/iOS/Android, Project N). Each track has
+    its own independent seq numbering -- see feedback_task_vs_project memory."""
+    next_seq = conn.execute(
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM initiatives WHERE track = ?", (track,)
+    ).fetchone()[0]
     cur = conn.execute(
-        "INSERT INTO initiatives (seq, title, artifact_url) VALUES (?, ?, ?)",
-        (next_seq, title, artifact_url),
+        "INSERT INTO initiatives (track, seq, title, artifact_url) VALUES (?, ?, ?, ?)",
+        (track, next_seq, title, artifact_url),
     )
     return cur.lastrowid
 
@@ -1482,11 +1556,16 @@ def set_initiative_status(conn, initiative_id: int, status: str):
     )
 
 
-def list_initiatives(conn, status: str = None) -> list:
+def list_initiatives(conn, status: str = None, track: str = None) -> list:
     query, params = "SELECT * FROM initiatives", []
+    clauses = []
     if status:
-        query += " WHERE status = ?"; params.append(status)
-    query += " ORDER BY seq ASC"
+        clauses.append("status = ?"); params.append(status)
+    if track:
+        clauses.append("track = ?"); params.append(track)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY track ASC, seq ASC"
     initiatives = [dict(r) for r in conn.execute(query, params).fetchall()]
 
     milestone_rows = conn.execute(

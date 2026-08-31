@@ -2,14 +2,27 @@
 
 Run these in order. Each step is real, tested-pattern commands for Ubuntu 24.04 — not placeholders. Where a step differs meaningfully from the macOS setup, that's called out explicitly.
 
-## 0. Prerequisites
+**Scope check, added 2026-08-31 -- read this first.** This guide moves the *internal engine* (`shakthi-os`: the orchestrator, the 25 real agents, Ollama, the local dashboard) off this Mac. It does NOT touch the real customer-facing products -- dhansetuhub.in, PDF Studio, BlackboxOps_OS, dhansetuhub.info, blackboxops.co.in -- those already run independently on Cloudflare's own infrastructure and have nothing to do with this Mac's reliability. Moving them isn't part of this migration and isn't needed for the reason this migration exists (this Mac restarting mid-work).
+
+**Real cause of the restarts, checked 2026-08-31 (see project_overnight_micro_offer... session notes):** the one incident actually investigated so far was traced to the battery draining to 5% while unplugged, which macOS force-sleeps for. That's a power-management issue, not a hardware fault -- worth knowing, since it doesn't rule out other real causes but also means "the Mac is failing" isn't yet a confirmed diagnosis. The Linux migration is still a reasonable move regardless (a real always-on server won't sleep on battery, won't need a lid open, isn't shared with everyday laptop use) -- just flagging so the actual root cause isn't lost if it turns out to recur even when plugged in.
+
+## 0. Choosing the actual Linux machine — not yet decided, real options
+
+This guide assumes a Linux box already exists to restore onto. Two real paths, with a real cost tradeoff to weigh against [[feedback_spend_from_profit_only]] (no paid infra funded by savings, only real profit):
+
+- **A spare/dedicated physical machine you already own**, running Ubuntu 24.04 — zero new recurring cost, but only solves the "shared with everyday laptop use" problem, not true 24/7 uptime unless it also stays powered on and connected like a server would.
+- **A real cloud VPS** (e.g. Hetzner, DigitalOcean, a low-end instance is enough — this workload is CPU/RAM-bound from Ollama, not GPU-bound) — genuine 24/7 uptime, reachable from anywhere, but a real recurring cost. Needs the RAM headroom for the largest model in use (gemma4 at 9.6 GB) plus the OS and other agents running concurrently — size the instance for that, not just disk space.
+
+Not decided yet — needs the founder's call on which, and (if a VPS) which provider/plan, before step 1 below can actually run against a real target.
+
+## 1. Prerequisites
 
 ```bash
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y curl git build-essential
 ```
 
-## 1. Restore the project
+## 2. Restore the project
 
 ```bash
 mkdir -p ~/shakthi-os
@@ -19,17 +32,19 @@ chmod +x start_dashboard.sh stop_dashboard.sh   # tar preserves the exec bit; re
                                                   # from a filesystem that doesn't (e.g. a FAT/exFAT drive)
 ```
 
-## 2. Ollama Installation
+## 3. Ollama Installation
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ```
 Installs Ollama as a systemd service (`ollama.service`), already enabled and started — this replaces macOS's launchd auto-start, no extra step needed here (unlike the API/dashboard below, which do need one).
 
-Pull the two models this project uses (11.6 GB total, real sizes from the source machine):
+Pull the models this project actually uses (real, re-checked 2026-08-31 -- two more have been added since this guide was first written, ~22.9 GB total now, not 11.6 GB):
 ```bash
 ollama pull llama3.2      # 2.0 GB — used by most agents
 ollama pull gemma4        # 9.6 GB — slower, used where individual agents/*.yaml specify it
+ollama pull qwen2.5       # 4.7 GB — added since the original guide
+ollama pull qwen3.5       # 6.6 GB — added since the original guide
 ```
 
 Verify:
@@ -38,7 +53,7 @@ ollama list
 curl http://localhost:11434/api/tags   # should return 200 with both models listed
 ```
 
-## 3. Python Environment Setup
+## 4. Python Environment Setup
 
 Ubuntu 24.04 ships Python 3.12 by default — this project was built and tested against 3.14 on macOS but has no 3.14-specific code; 3.12 is fine and actually simplifies one thing (see faster-whisper note below).
 
@@ -55,7 +70,7 @@ Notes carried over from `requirements.txt` (real blockers hit on macOS, worth kn
 - Voice Commander needs a working audio input device (`sounddevice` → PortAudio): `sudo apt install -y libportaudio2`.
 - Cloud escalation (optional): `pip install anthropic` and set `ANTHROPIC_API_KEY` — only if you want Claude escalation; the system runs fully local without it, same as on macOS.
 
-## 4. Database
+## 5. Database
 
 SQLite needs no installation on a fresh Ubuntu box beyond what Python already provides (`sqlite3` is stdlib). Restore `shakthi.db` from the backup and it works as-is — SQLite database files are portable across OSes byte-for-byte, no conversion needed.
 
@@ -84,7 +99,7 @@ sudo usermod -aG docker $USER   # log out/in after this for the group change to 
 docker --version
 ```
 
-## 5. Dashboard Setup
+## 6. Dashboard Setup
 
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
@@ -94,13 +109,13 @@ cd ~/shakthi-os/dashboard
 npm install       # rebuilds node_modules from package-lock.json — not part of the backup
 ```
 
-## 6. SHAKTHI OS Startup Procedure
+## 7. SHAKTHI OS Startup Procedure
 
 Same two scripts as macOS — they're plain bash, no macOS-specific commands inside (`start_dashboard.sh`/`stop_dashboard.sh` use `lsof`, `curl`, `nohup`, all available on Ubuntu via `apt install lsof` if not already present):
 
 ```bash
 cd ~/shakthi-os
-python3 -m orchestrator.cli --init      # creates shakthi.db tables if not restored, registers all 15 agents
+python3 -m orchestrator.cli --init      # creates shakthi.db tables if not restored, registers all 25 agents (was 15 when this guide was first written)
 ./start_dashboard.sh                     # http://localhost:3000, http://127.0.0.1:8787
 ```
 
@@ -144,12 +159,12 @@ sudo systemctl enable --now shakthi-api shakthi-dashboard
 ```
 Replace `YOUR_USER` with your actual Ubuntu username in both files first. This is optional infrastructure the guide adds for you — it did not exist on the macOS setup (which relied on manual `start_dashboard.sh`).
 
-## 7. Post-migration verification checklist
+## 8. Post-migration verification checklist
 
 ```bash
 cd ~/shakthi-os
 source .venv/bin/activate
-python3 -m unittest discover -s tests    # expect 144/144 passing, same as on macOS
+python3 -m unittest discover -s tests    # expect 399/399 passing, real count re-checked 2026-08-31 (was 144 when this guide was first written) -- run this on macOS first to confirm the baseline before you migrate
 curl http://127.0.0.1:8787/api/health    # {"db_ok": true, ...}
 curl -o /dev/null -s -w "%{http_code}\n" http://localhost:3000/   # 200
 ```

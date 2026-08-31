@@ -1,6 +1,6 @@
 id: reel_scripter
 layer: business
-squad: "Dhansetu AI"
+squad: "Front End Design"
 name: Dhansetu Reel Scripter
 default_model_tier: local
 local_model: llama3.2

@@ -16,7 +16,7 @@ completed via local-fallback or came back non-approved) in one place.
 """
 from datetime import datetime, timedelta
 
-from . import ceo_health_monitor, db, load_manager, sentinel
+from . import ceo_health_monitor, db, load_manager, sentinel, watchdog
 
 
 def check_subsystems() -> dict:
@@ -50,6 +50,13 @@ def check_subsystems() -> dict:
         checks["finance"] = {"ok": True, "detail": f"{row['n']} entries on record"}
     except Exception as e:
         checks["finance"] = {"ok": False, "detail": str(e)}
+
+    try:
+        with db.get_conn() as conn:
+            row = conn.execute("SELECT COUNT(*) AS n FROM watchdog_events").fetchone()
+        checks["watchdog"] = {"ok": True, "detail": f"{row['n']} event(s) on record"}
+    except Exception as e:
+        checks["watchdog"] = {"ok": False, "detail": str(e)}
 
     return checks
 

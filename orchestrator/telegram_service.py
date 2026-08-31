@@ -49,7 +49,15 @@ def send_daily_reports(token: str, chat_id: str, business_id=None) -> list:
 
 
 def alert(token: str, chat_id: str, category: str, message: str) -> dict:
-    text = f"*SHAKTHI ALERT — {category.upper()}*\n\n{message}"
+    # Header is bold and safe to leave unescaped -- `category` always
+    # comes from a fixed set of internal string literals this codebase
+    # controls (e.g. "watchdog", "security_posture"), never external data.
+    # `message` is built per-category from real dynamic content (agent
+    # ids, file paths, goal text) that individual check_* functions don't
+    # each escape themselves -- escaping the whole body here, once, is the
+    # safe default rather than trusting every caller to have done it.
+    header = f"*SHAKTHI ALERT — {tg.escape_markdown_v2(category.upper())}*"
+    text = f"{header}\n\n{tg.escape_markdown_v2(message)}"
     return tg.send_message(token, chat_id, text)
 
 

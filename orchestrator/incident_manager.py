@@ -57,14 +57,14 @@ def _notify(incident: dict, telegram_token: str, telegram_chat_id: str):
         token, chat_id = ts.resolve_credentials(telegram_token, telegram_chat_id)
     except tg.TelegramError:
         return
-    text = (f"🚨 SHAKTHI ERT — {incident['incident_number']}\n\n"
-            f"Type: {incident['incident_type']}\n"
+    body = (f"Type: {incident['incident_type']}\n"
             f"Severity: {severity} ({incident_registry.SEVERITY_LABELS.get(severity, '')})\n"
             f"Owner: {incident['owner']}{' (ESCALATED)' if incident['escalated'] else ''}\n"
             f"Support: {', '.join(incident['support_team'])}\n\n"
             f"{incident['description']}")
+    text = tg.format_report_md(f"🚨 SHAKTHI ERT — {incident['incident_number']}", body)
     try:
-        tg.send_message(token, chat_id, text, parse_mode=None)
+        tg.send_message(token, chat_id, text)
     except tg.TelegramError:
         pass
 

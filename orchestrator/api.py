@@ -51,6 +51,39 @@ def agents(qs):
     return {"agents": rows}
 
 
+@route("/api/agent-health")
+def agent_health(qs):
+    # Real signal only -- task count/failure count/last-activity from the
+    # actual tasks table, over the same recent window
+    # report_generators.agent_health_report_text() already uses (limit
+    # 200). No fabricated latency/escalation numbers -- this system has no
+    # per-agent timing or escalation tracker yet, so this endpoint doesn't
+    # claim to have one.
+    with db.get_conn() as conn:
+        agent_rows = db.list_agents(conn)
+        tasks = db.recent_tasks(conn, limit=200)
+
+    by_agent = {}
+    for t in tasks:
+        bucket = by_agent.setdefault(t["agent_id"], {"task_count": 0, "failed_count": 0, "last_activity": None})
+        bucket["task_count"] += 1
+        if t["status"] == "failed":
+            bucket["failed_count"] += 1
+        if bucket["last_activity"] is None or t["created_at"] > bucket["last_activity"]:
+            bucket["last_activity"] = t["created_at"]
+
+    result = []
+    for a in agent_rows:
+        stats = by_agent.get(a["id"], {"task_count": 0, "failed_count": 0, "last_activity": None})
+        result.append({
+            "id": a["id"], "name": a["name"], "layer": a["layer"],
+            "local_model": a["local_model"], "default_model_tier": a["default_model_tier"],
+            "task_count": stats["task_count"], "failed_count": stats["failed_count"],
+            "last_activity": stats["last_activity"],
+        })
+    return {"agents": result, "window": "last 200 tasks system-wide"}
+
+
 @route("/api/ceo/decisions")
 def ceo_decisions(qs):
     with db.get_conn() as conn:
@@ -144,6 +177,37 @@ def security_latest(qs):
 def security_scan(qs):
     business_id = _qs_int(qs, "business_id")
     return security.review(business_id=business_id)
+
+
+@route("/api/client-success/overview")
+def client_success_overview(qs):
+    from . import customer_success
+    with db.get_conn() as conn:
+        clients = db.list_leads(conn, status="won", limit=1000)
+        for c in clients:
+            health = db.latest_client_health_score(conn, c["id"])
+            if health:
+                health["signals"] = json.loads(health["signals"])
+            c["health"] = health
+    scores = [c["health"]["score"] for c in clients if c["health"]]
+    avg_score = round(sum(scores) / len(scores)) if scores else None
+    at_risk_count = sum(1 for s in scores if s < customer_success.AT_RISK_THRESHOLD)
+    return {"clients": clients, "total_clients": len(clients), "avg_health_score": avg_score, "at_risk_count": at_risk_count}
+
+
+@route("/api/client-success/at-risk")
+def client_success_at_risk(qs):
+    from . import customer_success
+    with db.get_conn() as conn:
+        clients = db.list_leads(conn, status="won", limit=1000)
+        at_risk = []
+        for c in clients:
+            health = db.latest_client_health_score(conn, c["id"])
+            if health and health["score"] < customer_success.AT_RISK_THRESHOLD:
+                health["signals"] = json.loads(health["signals"])
+                c["health"] = health
+                at_risk.append(c)
+    return {"at_risk_clients": at_risk}
 
 
 @route("/api/costs")

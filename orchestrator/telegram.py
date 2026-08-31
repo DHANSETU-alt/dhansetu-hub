@@ -16,9 +16,35 @@ import urllib.request
 
 API_BASE = "https://api.telegram.org/bot{token}/{method}"
 
+# Telegram's MarkdownV2 spec: these characters MUST be escaped with a
+# backslash anywhere they appear outside real formatting entities, or the
+# whole message is rejected with "can't parse entities". This codebase's
+# real report content is full of underscores (agent_id, template_landing_v1,
+# file paths) -- legacy "Markdown" mode treats a lone underscore as an
+# unclosed italic marker and breaks constantly; MarkdownV2 with real
+# escaping is the actually-safe way to get bold headers.
+_MDV2_SPECIAL = set(r"_*[]()~`>#+-=|{}.!\\")
+
 
 class TelegramError(RuntimeError):
     pass
+
+
+def format_report_md(title: str, body: str) -> str:
+    """Bold title (must be a static string this codebase writes, never
+    dynamic data) + fully-escaped body -- the safe default for every
+    multi-line report this system sends, so a report's own content can
+    never break Telegram's MarkdownV2 parser regardless of what real data
+    ends up in it."""
+    return f"*{escape_markdown_v2(title)}*\n\n{escape_markdown_v2(body)}"
+
+
+def escape_markdown_v2(text: str) -> str:
+    """Escape all MarkdownV2 special characters in DYNAMIC content before
+    interpolating it into a report string. Never call this on the bold
+    markers/section headers you write yourself -- only on values that come
+    from data (agent ids, file paths, goal text, urls, etc)."""
+    return "".join(f"\\{c}" if c in _MDV2_SPECIAL else c for c in str(text))
 
 
 def _call(token: str, method: str, params: dict, timeout: int = 15) -> dict:
@@ -38,7 +64,7 @@ def _call(token: str, method: str, params: dict, timeout: int = 15) -> dict:
     return body["result"]
 
 
-def send_message(token: str, chat_id: str, text: str, parse_mode: str = "Markdown") -> dict:
+def send_message(token: str, chat_id: str, text: str, parse_mode: str = "MarkdownV2") -> dict:
     # Telegram caps messages at 4096 chars -- truncate rather than fail.
     if len(text) > 4000:
         text = text[:3990] + "\n...[truncated]"

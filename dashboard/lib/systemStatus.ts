@@ -31,6 +31,30 @@ export type AgentNode = {
   color: "cyan" | "violet" | "amber" | "rose" | "emerald" | "slate";
 };
 
+// Real persona names + animal-face emoji decided for the 25 real agents
+// (2026-08-30/31, same identities used on the BlackboxOps_OS dashboard's
+// Living System View -- one shared roster, not two different namings).
+// Keyed by the real agents/*.yaml `id`.
+export const PERSONA_NAME: Record<string, string> = {
+  buddy: "Bruno", bug_fixer: "Ziggy", business_analyst: "Hazel", ceo: "Leo",
+  chrome_developer: "Dash", content_scheduler: "Cora", correction_bot: "Max",
+  course_writer: "Percy", customer_success: "Remy", data_intelligence: "Nia",
+  dhansetu_manager: "Rex", email_handler: "Ollie", engineer: "Otis",
+  finance: "Penny", knowledge: "Sage", manager: "Duke", marketing: "Ivy",
+  memory: "Pip", pa_angella: "Angella", prompt_writer: "Zara", qa: "Watson",
+  reel_scripter: "Flick", sales: "Kai", security: "Ranger", website_builder: "Milo",
+};
+
+export const PERSONA_FACE: Record<string, string> = {
+  buddy: "🐕", bug_fixer: "🦝", business_analyst: "🦉", ceo: "🦁",
+  chrome_developer: "🦎", content_scheduler: "🦫", correction_bot: "🐿️",
+  course_writer: "🦜", customer_success: "🐬", data_intelligence: "🐘",
+  dhansetu_manager: "🐕‍🦺", email_handler: "🐦", engineer: "🦡",
+  finance: "🐹", knowledge: "🐢", manager: "🐩", marketing: "🦚",
+  memory: "🦔", pa_angella: "🦊", prompt_writer: "🦩", qa: "🐺",
+  reel_scripter: "🕊️", sales: "🦅", security: "🦮", website_builder: "🐦‍⬛",
+};
+
 export async function loadSystemStatus() {
   const [ceoHealth, workers, financeAll, securityLatest, bugsOpen, reviews, projects, knowledge, tasks, sentinelLatest, agentsResp] =
     await Promise.all([
@@ -128,6 +152,26 @@ export async function loadSystemStatus() {
     };
   });
 
+  // Real top-KPI-row numbers (Executive Neural Network spec §7) -- every
+  // value here comes from the same real tasks/agents data already fetched
+  // above for the graph itself, not a second data source. successRate is
+  // null (never 0%) when there simply aren't enough finished tasks yet in
+  // the fetched window to compute a real rate -- an honest "not enough
+  // data" beats a misleading 0%.
+  const recentTasks = tasks.tasks.filter((t) => isRecent(t.created_at));
+  const missionsPerMinute = Math.round((recentTasks.length / ACTIVITY_WINDOW_MINUTES) * 10) / 10;
+  const doneCount = tasks.tasks.filter((t) => t.status === "done").length;
+  const failedCount = tasks.tasks.filter((t) => t.status === "failed").length;
+  const successRatePercent = doneCount + failedCount > 0 ? Math.round((doneCount / (doneCount + failedCount)) * 1000) / 10 : null;
+  const bottleneckCount = nodes.filter((n) => n.color === "rose").length;
+
+  // Live Activity Stream (spec §11) -- the real /api/tasks rows already
+  // fetched above, newest first. No "duration" column: tasks only store
+  // created_at, not a completion timestamp, so a real elapsed-time can't be
+  // computed honestly -- shown as age-since-created instead of a fabricated
+  // duration.
+  const recentActivity = [...tasks.tasks].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 15);
+
   return {
     nodes,
     ceoHealth,
@@ -135,5 +179,13 @@ export async function loadSystemStatus() {
     workers: workers.workers,
     loadBalancer: workers.load_balancer,
     sentinelOk: !!sentinelLatest.snapshot,
+    recentActivity,
+    kpis: {
+      totalAgents: nodes.length,
+      activeAgents: nodes.filter((n) => n.active).length,
+      missionsPerMinute,
+      successRatePercent,
+      bottleneckCount,
+    },
   };
 }

@@ -1,6 +1,6 @@
 id: dhansetu_manager
 layer: coordination
-squad: "Dhansetu AI"
+squad: "Superpower"
 name: Dhansetu Assistant Manager
 default_model_tier: local
 local_model: llama3.2

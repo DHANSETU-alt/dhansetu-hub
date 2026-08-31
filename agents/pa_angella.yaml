@@ -1,5 +1,6 @@
 id: pa_angella
 layer: coordination
+squad: "Superpower"
 name: PA Angella
 default_model_tier: local
 local_model: llama3.2

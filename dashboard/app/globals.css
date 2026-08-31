@@ -53,10 +53,10 @@
 }
 
 .dark {
-  --bg: #0e1210;
-  --surface: #151a17;
-  --surface-2: #1c2220;
-  --border: oklch(1 0 0 / 10%);
+  --bg: #020303;
+  --surface: #06090b;
+  --surface-2: #0a0f12;
+  --border: rgba(255, 255, 255, 0.05);
   --ink: #e7ebe6;
   --muted: oklch(0.269 0 0);
   --local: #55b3aa;
@@ -66,8 +66,8 @@
   --good: #4fbf7f;
   --warn: #e0b23a;
   --bad: #e2705a;
-  --glass-bg: rgba(21, 26, 23, 0.55);
-  --glass-border: rgba(231, 235, 230, 0.08);
+  --glass-bg: rgba(8, 11, 13, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.06);
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -113,6 +113,9 @@ body {
    a flat background reads as nothing. Fixed so it doesn't scroll away;
    low-opacity so it stays atmosphere, not decoration competing for
    attention. */
+/* Black-hole ground per the Executive Neural Network spec (§2): near-pure
+   black, restrained cyan glow only -- no purple wash competing with the
+   matrix rain and neon accents. */
 body::before {
   content: "";
   position: fixed;
@@ -120,8 +123,8 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(720px circle at 12% 8%, color-mix(in srgb, var(--local) 16%, transparent), transparent 60%),
-    radial-gradient(640px circle at 92% 78%, color-mix(in srgb, var(--cloud) 12%, transparent), transparent 60%);
+    radial-gradient(720px circle at 12% 8%, color-mix(in srgb, var(--local) 5%, transparent), transparent 60%),
+    radial-gradient(640px circle at 92% 78%, color-mix(in srgb, #22d3ee 4%, transparent), transparent 60%);
 }
 
 .glass {

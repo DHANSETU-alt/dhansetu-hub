@@ -336,10 +336,74 @@ def check_security_posture(conn, state: dict) -> list:
     return [f"Security posture score is {row['score']}/100 -- {findings_line}"]
 
 
+def check_domain_dns(state: dict, domain: str = "dhansetuhub.info") -> list:
+    """Hourly watch on a specific domain's DNS -- built 2026-08-30 after
+    finding dhansetuhub.info resolves to 127.0.0.1 (a registered-but-
+    misconfigured/parked domain, not a real site). Alerts ONCE, the moment
+    the domain stops resolving to loopback/nothing -- i.e. once the
+    founder has actually pointed it somewhere real. State key is scoped
+    per-domain so a second domain could be watched later without
+    colliding."""
+    import socket
+
+    key = f"domain_dns_ready_{domain}"
+    already_alerted = state.get(key, False)
+    if already_alerted:
+        return []
+
+    try:
+        resolved_ip = socket.gethostbyname(domain)
+    except socket.gaierror:
+        return []  # not registered / doesn't resolve at all -- nothing new to say
+
+    if resolved_ip in ("127.0.0.1", "0.0.0.0", "::1"):
+        return []  # still parked/misconfigured -- not ready yet
+
+    state[key] = True
+    return [f"{domain} now resolves to {resolved_ip} (was parked at loopback) -- looks like it's pointed somewhere real. Ready to build the blog."]
+
+
+def check_watchdog(conn, state: dict) -> list:
+    """Watches watchdog_events (produced by watchdog.run_scan(), which must
+    run on its own schedule for this to see anything new -- same two-stage
+    split as check_security_posture/security_posture_scan). Advances past
+    every new row so nothing re-alerts, but only messages on warning/
+    critical -- info-level findings (e.g. a routine attributable file edit,
+    or a port scan that couldn't run) stay in the DB audit trail without
+    paging anyone."""
+    rows = db.recent_watchdog_events(conn, since_id=state.get("watchdog_last_event_id", 0), limit=200)
+    if rows:
+        state["watchdog_last_event_id"] = max(r["id"] for r in rows)
+    return [f"[{r['severity'].upper()}] {r['category']}: {r['detail']}"
+            for r in rows if r["severity"] in ("warning", "critical")]
+
+
+def check_client_health(conn, state: dict) -> list:
+    """Watches customer_success.scan_all_clients()'s runs for newly-scored
+    clients that dropped below AT_RISK_THRESHOLD. Same reasoning as
+    check_security_posture: something calling --client-health-scan on a
+    schedule is what actually produces new client_health_scores rows; this
+    check just makes sure a drop doesn't sit silent until someone happens
+    to open the dashboard. Advances past every new row regardless of score
+    so a healthy client isn't re-checked on the next run."""
+    from . import customer_success
+    rows = db.list_client_health_scores(conn, since_id=state.get("client_health_last_id", 0), limit=200)
+    if rows:
+        state["client_health_last_id"] = max(r["id"] for r in rows)
+    at_risk = [r for r in rows if r["score"] < customer_success.AT_RISK_THRESHOLD]
+    messages = []
+    for r in at_risk:
+        lead = db.get_lead(conn, r["lead_id"])
+        name = lead["name"] if lead else f"lead #{r['lead_id']}"
+        messages.append(f"Client health {r['score']}/100 for {name} — at risk of churn")
+    return messages
+
+
 CHECKS = {
     "revenue": check_revenue,
     "security": check_security,
     "security_posture": check_security_posture,
+    "watchdog": check_watchdog,
     "website_downtime": check_website_downtime,
     "agent_failures": check_agent_failures,
     "critical_ceo_decisions": check_critical_ceo_decisions,
@@ -378,6 +442,34 @@ def run_security_posture_check(token: str, chat_id: str) -> dict:
     return {"security_posture": len(messages)}
 
 
+def run_domain_dns_check(token: str, chat_id: str, domain: str = "dhansetuhub.info") -> dict:
+    """Standalone, scoped hourly check -- reads/writes only its own
+    'domain_dns_ready_<domain>' state key, same pattern as every other
+    run_*_check here."""
+    state = _load_state()
+    messages = check_domain_dns(state, domain)
+    _save_state(state)
+    if messages:
+        ts.alert(token, chat_id, "domain_dns", "\n".join(f"- {m}" for m in messages))
+    return {"domain_dns": len(messages)}
+
+
+def run_watchdog_alert_check(token: str, chat_id: str) -> dict:
+    """Scoped, standalone version of the watchdog category -- reads/writes
+    the same .alerts_sync_state.json (only its own "watchdog_last_event_id"
+    key), same reasoning as run_security_posture_check/run_sentinel_alert_check
+    above: never touches the other CHECKS categories' unseeded historical
+    backlog. Pair with a cron entry that runs --watchdog-scan first to
+    produce fresh events -- this only reads what's already in the DB."""
+    state = _load_state()
+    with db.get_conn() as conn:
+        messages = check_watchdog(conn, state)
+    _save_state(state)
+    if messages:
+        ts.alert(token, chat_id, "watchdog", "\n".join(f"- {m}" for m in messages))
+    return {"watchdog": len(messages)}
+
+
 def run_sentinel_alert_check(token: str, chat_id: str) -> dict:
     """Standalone version of the sentinel category, same reasoning as
     run_security_posture_check() above: reuses the existing check_sentinel
@@ -393,6 +485,24 @@ def run_sentinel_alert_check(token: str, chat_id: str) -> dict:
     if messages:
         ts.alert(token, chat_id, "sentinel", "\n".join(f"- {m}" for m in messages))
     return {"sentinel": len(messages)}
+
+
+def run_client_health_check(token: str, chat_id: str) -> dict:
+    """Scoped, standalone version of client health -- reads/writes the same
+    .alerts_sync_state.json (only its own "client_health_last_id" key), but
+    doesn't touch or evaluate any of the other CHECKS categories.
+    Deliberately separate from run_sweep()/--alerts-sweep for the same
+    reason security_posture and sentinel are: that sweep has never been run
+    on this machine and would dump years of unrelated historical backlog
+    the first time it runs. Wire this into cron instead, paired with a
+    --client-health-scan entry that runs first to produce fresh rows."""
+    state = _load_state()
+    with db.get_conn() as conn:
+        messages = check_client_health(conn, state)
+    _save_state(state)
+    if messages:
+        ts.alert(token, chat_id, "client_health", "\n".join(f"- {m}" for m in messages))
+    return {"client_health": len(messages)}
 
 
 def run_sweep(token: str, chat_id: str) -> dict:

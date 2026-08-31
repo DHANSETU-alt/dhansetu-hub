@@ -86,6 +86,20 @@ export const getOverview = () =>
 
 export const getAgents = () => apiGet<{ agents: Agent[] }>("/api/agents");
 
+export type AgentHealth = {
+  id: string;
+  name: string;
+  layer: string;
+  local_model: string | null;
+  default_model_tier: string;
+  task_count: number;
+  failed_count: number;
+  last_activity: string | null;
+};
+
+export const getAgentHealth = () =>
+  apiGet<{ agents: AgentHealth[]; window: string }>("/api/agent-health");
+
 export type Course = {
   id: number;
   business_id: number | null;
@@ -135,6 +149,7 @@ export type InitiativeMilestone = {
 };
 export type Initiative = {
   id: number;
+  track: "task" | "project";
   seq: number;
   title: string;
   artifact_url: string | null;
@@ -355,6 +370,34 @@ export const getSecurityLatest = (businessId?: number) =>
   );
 
 export const getCosts = () => apiGet<{ cost_summary: CostRow[]; recent_tool_calls: ToolCall[] }>("/api/costs");
+
+export type ClientHealth = {
+  id: number;
+  lead_id: number;
+  business_id: number | null;
+  score: number;
+  signals: Record<string, number | string | null>;
+  created_at: string;
+};
+
+export type Client = {
+  id: number;
+  business_id: number | null;
+  name: string;
+  email: string;
+  contact: string | null;
+  status: string;
+  owner: string;
+  created_at: string;
+  health: ClientHealth | null;
+};
+
+export const getClientHealthOverview = () =>
+  apiGet<{ clients: Client[]; total_clients: number; avg_health_score: number | null; at_risk_count: number }>(
+    "/api/client-success/overview"
+  );
+
+export const getAtRiskClients = () => apiGet<{ at_risk_clients: Client[] }>("/api/client-success/at-risk");
 
 export type Site = {
   id: number;

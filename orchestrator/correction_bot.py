@@ -279,7 +279,7 @@ def review_and_correct(task_type: str, task_ref: str, content: str, business_id:
         from . import telegram_service as ts
         try:
             token, chat_id = ts.resolve_credentials(telegram_token, telegram_chat_id)
-            tg.send_message(token, chat_id, report_text, parse_mode=None)
+            tg.send_message(token, chat_id, tg.format_report_md("Correction Bot", report_text))
             result["telegram_sent"] = True
         except tg.TelegramError as e:
             result["telegram_error"] = str(e)

@@ -348,7 +348,7 @@ def run_website_audit(url: str, telegram_token: str = None, telegram_chat_id: st
     from . import telegram_service as ts
     try:
         token, chat_id = ts.resolve_credentials(telegram_token, telegram_chat_id)
-        tg.send_message(token, chat_id, report_text, parse_mode=None)
+        tg.send_message(token, chat_id, tg.format_report_md("Website Audit", report_text))
         result["telegram_sent"] = True
     except tg.TelegramError as e:
         result["telegram_error"] = str(e)

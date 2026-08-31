@@ -147,6 +147,32 @@ CREATE TABLE IF NOT EXISTS security_reports (
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- AI Watchdog (2026-08-30) -- behavioral/runtime anomaly detection, distinct
+-- from security_reports above (static posture: secrets, permissions, env
+-- config) and from system_health (resource usage). This watches PATTERNS
+-- over time: denied-tool-call spikes, cost-ledger spend spikes, unexpected
+-- listening ports, and tamper-evidence on the platform's own critical
+-- source files. Deterministic checks only, same reasoning as security.py's
+-- own header comment -- an anomaly detector that depends on a local model's
+-- judgment isn't one.
+CREATE TABLE IF NOT EXISTS watchdog_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  category TEXT NOT NULL,        -- tool_call_spike | denied_spike | cost_spike | file_tamper | unexpected_port | voice_probe
+  severity TEXT NOT NULL,        -- info | warning | critical
+  detail TEXT NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Baseline hashes for tamper detection -- one row per watched file, sha256
+-- of its current content. A change between runs is reported as a finding;
+-- it is NOT auto-"resolved" back to healthy by simply re-hashing on the
+-- next run silently -- see watchdog.py's own comment on this.
+CREATE TABLE IF NOT EXISTS watchdog_file_hashes (
+  path TEXT PRIMARY KEY,
+  sha256 TEXT NOT NULL,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Phase 0.4 -------------------------------------------------------------
 
 -- Real error capture from CLI/API top-level exception handlers -- this is
@@ -578,6 +604,31 @@ CREATE TABLE IF NOT EXISTS lead_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   lead_id INTEGER NOT NULL REFERENCES leads(id),
   event_type TEXT NOT NULL,   -- scored | outreach_drafted | proposal_drafted | escalated | status_change
+  payload TEXT,
+  task_id INTEGER REFERENCES tasks(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Client Success. A "client" is a lead with status='won' -- no separate
+-- clients table, same reasoning as leads/lead_events above (reuse what
+-- exists rather than duplicating it). Health is read from product_usage
+-- and product_subscriptions (both keyed by email, same "email is the only
+-- identity concept this project has for paying customers" model) at scan
+-- time, then snapshotted here so the alert-check below has something to
+-- diff against, same shape as security_reports.
+CREATE TABLE IF NOT EXISTS client_health_scores (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_id INTEGER NOT NULL REFERENCES leads(id),
+  business_id INTEGER REFERENCES businesses(id),
+  score INTEGER NOT NULL,        -- 0-100
+  signals TEXT NOT NULL,         -- JSON: {days_since_last_use, use_count_30d, days_since_last_payment}
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS client_health_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_id INTEGER NOT NULL REFERENCES leads(id),
+  event_type TEXT NOT NULL,   -- health_scored | at_risk_flagged | retention_outreach_drafted
   payload TEXT,
   task_id INTEGER REFERENCES tasks(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP

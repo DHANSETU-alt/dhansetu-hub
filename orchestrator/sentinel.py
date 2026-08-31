@@ -13,6 +13,7 @@ import shutil
 import socket
 import subprocess
 import urllib.request
+from pathlib import Path
 
 import psutil
 
@@ -108,7 +109,13 @@ def collect_health() -> dict:
     cpu_freq = psutil.cpu_freq()
     vm = psutil.virtual_memory()
     swap = psutil.swap_memory()
-    disk = psutil.disk_usage("/")
+    # psutil.disk_usage("/") reads the sealed System volume, which is
+    # nearly empty on modern macOS (System/Data APFS volume split) --
+    # real user/app data lives on Data, reachable via the home directory.
+    # Same real bug found and fixed in blackboxops-cleaner/cleaner/health.py
+    # earlier tonight -- every disk_percent row in system_health before this
+    # fix reflects the wrong, near-empty volume, not real disk usage.
+    disk = psutil.disk_usage(str(Path.home()))
     battery = psutil.sensors_battery()
 
     with db.get_conn() as conn:
@@ -138,6 +145,64 @@ def collect_health() -> dict:
         db.insert_health_snapshot(conn, **snapshot)
 
     return snapshot
+
+
+def forecast(metric: str = "disk_percent", threshold: float = 90.0, min_points: int = 5) -> dict:
+    """Real trend projection from actual stored history (system_health
+    table) -- a linear fit over real timestamped readings, not a guessed
+    number. Returns days_to_threshold=None when there isn't enough real
+    history yet, or when the trend is flat/decreasing (never invents a
+    forecast the data doesn't support). SHAKTHI_OS 3.1 Phase 1 -- see
+    SHAKTHI_OS_3.1_ULTRA_OMNI_ROADMAP.md.
+    """
+    from datetime import datetime
+
+    with db.get_conn() as conn:
+        rows = db.recent_health_snapshots(conn, limit=500)
+
+    points = []
+    for r in rows:
+        value = r.get(metric)
+        ts = r.get("created_at")
+        if value is None or ts is None:
+            continue
+        try:
+            when = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+        points.append((when, float(value)))
+
+    if len(points) < min_points:
+        return {"metric": metric, "current": points[0][1] if points else None,
+                "days_to_threshold": None, "reason": f"only {len(points)} real data points, need >= {min_points}"}
+
+    points.sort(key=lambda p: p[0])
+    t0 = points[0][0]
+    xs = [(p[0] - t0).total_seconds() / 86400.0 for p in points]  # days since first point
+    ys = [p[1] for p in points]
+
+    n = len(xs)
+    mean_x = sum(xs) / n
+    mean_y = sum(ys) / n
+    num = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys))
+    den = sum((x - mean_x) ** 2 for x in xs)
+    slope = num / den if den else 0.0  # units per day
+    current = ys[-1]
+
+    if slope <= 0:
+        return {"metric": metric, "current": round(current, 1), "slope_per_day": round(slope, 4),
+                "days_to_threshold": None, "reason": "flat or decreasing trend -- no real growth to project"}
+
+    days_to_threshold = (threshold - current) / slope if current < threshold else 0
+    return {
+        "metric": metric,
+        "current": round(current, 1),
+        "slope_per_day": round(slope, 4),
+        "threshold": threshold,
+        "days_to_threshold": round(days_to_threshold, 1) if days_to_threshold >= 0 else 0,
+        "sample_size": n,
+        "reason": f"linear trend over {n} real readings spanning {round(xs[-1], 1)} days",
+    }
 
 
 def service_status() -> dict:

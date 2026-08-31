@@ -162,11 +162,11 @@ def review_website(url: str, business_id: int = None, telegram_token: str = None
         try:
             token, chat_id = ts.resolve_credentials(telegram_token, telegram_chat_id)
             if critical_count > 0:
-                tg.send_message(token, chat_id, f"⚠️ Website errors found on {url}:\n" + report_text, parse_mode=None)
+                tg.send_message(token, chat_id, tg.format_report_md(f"⚠️ Website errors found on {url}", report_text))
             elif deployment_ready:
-                tg.send_message(token, chat_id, f"✅ Deployment ready — {url}\n" + report_text, parse_mode=None)
+                tg.send_message(token, chat_id, tg.format_report_md(f"✅ Deployment ready — {url}", report_text))
             else:
-                tg.send_message(token, chat_id, report_text, parse_mode=None)
+                tg.send_message(token, chat_id, tg.format_report_md("Website audit", report_text))
             result["telegram_sent"] = True
         except tg.TelegramError as e:
             result["telegram_error"] = str(e)

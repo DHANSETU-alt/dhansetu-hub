@@ -58,6 +58,12 @@ def check_security(sources: dict) -> list:
     findings = []
     for path, text in sources.items():
         rel = str(path.relative_to(bft.codebase_root()))
+        # tests/ deliberately contains dummy secrets and dangerous-pattern
+        # strings whose job is to verify these very detectors work (see
+        # _orchestrator_files()'s docstring) -- scanning them as if they
+        # were live orchestrator/ code produces guaranteed false positives.
+        if Path(rel).parts[0] == "tests":
+            continue
         for name, pattern in security_mod.SECRET_PATTERNS.items():
             m = pattern.search(text)
             if m:

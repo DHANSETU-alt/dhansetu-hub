@@ -1,6 +1,6 @@
 id: content_scheduler
 layer: business
-squad: "Dhansetu AI"
+squad: "Front End Design"
 name: Dhansetu Content Scheduler
 default_model_tier: local
 local_model: llama3.2

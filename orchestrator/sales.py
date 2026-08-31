@@ -156,8 +156,7 @@ def flag_for_founder(lead_id: int, reason: str, telegram_token: str = None, tele
         try:
             telegram.send_message(
                 telegram_token, telegram_chat_id,
-                f"High-intent lead needs you: {lead['name']} ({lead['email']}) — {reason}",
-                parse_mode=None,
+                telegram.escape_markdown_v2(f"High-intent lead needs you: {lead['name']} ({lead['email']}) — {reason}"),
             )
         except telegram.TelegramError:
             pass  # best-effort -- the lead is already flagged in-app regardless

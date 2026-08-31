@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { Sidebar } from "@/components/Sidebar";
+import { ConditionalSidebar } from "@/components/ConditionalSidebar";
 import { getPaAngellaStatus } from "@/lib/api";
+import { ChatGptSitesCountdown } from "@/components/ChatGptSitesCountdown";
+import { MatrixRain } from "@/components/AmbientEffects";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,8 +27,12 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`dark ${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full bg-[var(--bg)] text-[var(--ink)]">
-        <div className="flex">
-          <Sidebar angellaStatus={angellaStatus} />
+        <div className="fixed inset-0 z-0" aria-hidden="true">
+          <MatrixRain />
+        </div>
+        <ChatGptSitesCountdown />
+        <div className="relative z-10 flex pt-9">
+          <ConditionalSidebar angellaStatus={angellaStatus} />
           <main className="flex-1 min-w-0 px-8 py-6">{children}</main>
         </div>
       </body>

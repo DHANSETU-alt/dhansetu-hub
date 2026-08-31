@@ -142,7 +142,7 @@ def _send_alerts(status: dict, failed: list, telegram_token: str, telegram_chat_
 
     if messages:
         try:
-            tg.send_message(token, chat_id, "🧵 SHAKTHI WORKER POOL ALERT\n\n" + "\n".join(messages), parse_mode=None)
+            tg.send_message(token, chat_id, tg.format_report_md("🧵 SHAKTHI WORKER POOL ALERT", "\n".join(messages)))
         except tg.TelegramError:
             pass
 

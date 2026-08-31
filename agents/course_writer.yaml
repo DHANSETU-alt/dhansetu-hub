@@ -1,6 +1,6 @@
 id: course_writer
 layer: business
-squad: "Dhansetu AI"
+squad: "Front End Design"
 name: Dhansetu Course Writer
 default_model_tier: local
 local_model: llama3.2

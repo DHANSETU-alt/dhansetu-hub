@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import access, alerts, audit, bug_fixer, buddy, ceo, chrome_developer, config, correction_bot, db, dhansetu_ai, failure_analysis, finance, incident_manager, incident_scheduler, initiatives, knowledge, team_register, load_manager, marketing, market_data, onboarding, pa_angella, payment_gateway_manager, payments, pdf_studio, peopledesk, pricing, prompt_engine, registry, routing, sales, security, sentinel, sheets, sitegen, skill_test, template_registry, trading_engine, voice, voice_history, website_audit, website_builder, worker_pool
+from . import access, alerts, audit, bug_fixer, buddy, ceo, chrome_developer, config, correction_bot, customer_success, db, dhansetu_ai, failure_analysis, finance, founder_review, incident_manager, incident_scheduler, initiatives, knowledge, team_register, load_manager, marketing, market_data, onboarding, pa_angella, payment_certification, payment_gateway_manager, payments, pdf_studio, peopledesk, pricing, prompt_engine, registry, routing, sales, security, sentinel, sheets, sitegen, skill_test, template_registry, trading_engine, voice, voice_history, watchdog, website_audit, website_builder, worker_pool
 from . import telegram as tg
 from . import telegram_service as ts
 from .tools.registry import TOOL_REGISTRY
@@ -150,12 +150,61 @@ def _cmd_security_alert_check(token, chat_id):
           else "Security posture alert check complete: no new drop to report")
 
 
+def _cmd_founder_review(token, chat_id):
+    token, chat_id = ts.resolve_credentials(token, chat_id)
+    result = founder_review.run_founder_review(token, chat_id)
+    print(result["report_text"])
+    print()
+    print("Telegram sent" if result["telegram_sent"] else f"Telegram NOT sent: {result.get('telegram_error')}")
+
+
+def _cmd_domain_dns_check(token, chat_id):
+    token, chat_id = ts.resolve_credentials(token, chat_id)
+    sent = alerts.run_domain_dns_check(token, chat_id)
+    count = sent["domain_dns"]
+    print(f"Domain DNS check complete: {count} message(s) sent" if count
+          else "Domain DNS check complete: not resolved yet (or already alerted)")
+
+
+def _cmd_watchdog_scan():
+    state = alerts._load_state()
+    result = watchdog.run_scan(state)
+    alerts._save_state(state)
+    print(watchdog.format_report(result))
+
+
+def _cmd_watchdog_alert_check(token, chat_id):
+    token, chat_id = ts.resolve_credentials(token, chat_id)
+    sent = alerts.run_watchdog_alert_check(token, chat_id)
+    count = sent["watchdog"]
+    print(f"Watchdog alert check complete: {count} message(s) sent" if count
+          else "Watchdog alert check complete: nothing above info level to report")
+
+
 def _cmd_sentinel_alert_check(token, chat_id):
     token, chat_id = ts.resolve_credentials(token, chat_id)
     sent = alerts.run_sentinel_alert_check(token, chat_id)
     count = sent["sentinel"]
     print(f"Sentinel alert check complete: {count} message(s) sent" if count
           else "Sentinel alert check complete: nothing to report")
+
+
+def _cmd_client_health_scan():
+    print("Client health scan: scoring every won lead...")
+    results = customer_success.scan_all_clients()
+    at_risk = [r for r in results if r["score"] < customer_success.AT_RISK_THRESHOLD]
+    print(f"Scored {len(results)} client(s), {len(at_risk)} at risk (score < {customer_success.AT_RISK_THRESHOLD})")
+    for r in at_risk:
+        print(f"  lead #{r['lead_id']}: {r['score']}/100 — {r['signals']}")
+    print("DB stored: True (client_health_scores, client_health_events)")
+
+
+def _cmd_client_health_check(token, chat_id):
+    token, chat_id = ts.resolve_credentials(token, chat_id)
+    sent = alerts.run_client_health_check(token, chat_id)
+    count = sent["client_health"]
+    print(f"Client health alert check complete: {count} message(s) sent" if count
+          else "Client health alert check complete: no new at-risk client to report")
 
 
 def _cmd_bug_report(title, description, severity):
@@ -261,6 +310,28 @@ def _cmd_sentinel_check():
     print()
     for name, status in sentinel.service_status().items():
         print(f"  {name}: {status}")
+
+
+def _cmd_sentinel_forecast(metric: str, threshold: float):
+    result = sentinel.forecast(metric, threshold=threshold)
+    print(f"Metric: {result['metric']}   Current: {result['current']}")
+    if result["days_to_threshold"] is None:
+        print(f"  No projection: {result['reason']}")
+    else:
+        print(f"  Trend: {result['slope_per_day']}/day   Threshold: {result['threshold']}")
+        print(f"  Days to threshold: {result['days_to_threshold']}  ({result['reason']})")
+
+
+def _cmd_payment_certify(product: str, provider: str, environment: str, signals_json: str):
+    signals = json.loads(signals_json) if signals_json else {}
+    result = payment_certification.certify(product, provider, environment, signals)
+    print(f"PAYMENT CERTIFICATION -- {result['product']} / {result['provider']} / {result['environment']}")
+    print(f"  Security: {result['security_score']}/100   Reliability: {result['reliability_score']}/100   Overall: {result['overall_score']}/100")
+    print(f"  RESULT: {result['result']}")
+    if result["blocking_failures"]:
+        print("  Blocking failures:")
+        for f in result["blocking_failures"]:
+            print(f"    - {f}")
 
 
 def _cmd_sentinel_loop(interval_seconds: int, telegram_token, telegram_chat_id):
@@ -784,9 +855,10 @@ def _cmd_subscribe(email, product, gateway, razorpay_key_id, razorpay_key_secret
     print(json.dumps(result, default=str))
 
 
-def _cmd_initiative_add(title, artifact_url):
-    result = initiatives.add_initiative(title, artifact_url=artifact_url)
-    print(f"Task {result['seq']} (#{result['id']}): {title}")
+def _cmd_initiative_add(title, artifact_url, track="task"):
+    result = initiatives.add_initiative(title, artifact_url=artifact_url, track=track)
+    label = "Task" if track == "task" else "Project"
+    print(f"{label} {result['seq']} (#{result['id']}): {title}")
 
 
 def _cmd_milestone_add(initiative_id, title, done):
@@ -1085,8 +1157,20 @@ def main():
     parser.add_argument("--alerts-sweep", action="store_true", help="Check all alert categories and send only what's new to Telegram")
     parser.add_argument("--security-alert-check", action="store_true",
                          help="Standalone security-posture alert: Telegram-alerts only when the latest --security-scan score isn't 100, using its own dedup state (unlike --alerts-sweep, never dumps unrelated historical backlog)")
+    parser.add_argument("--founder-review", action="store_true",
+                         help="Full-picture review across Shakthi OS + every tracked initiative, with a real CEO-agent counter-solution plan -- sent to Telegram, never auto-acted on")
+    parser.add_argument("--domain-dns-check", action="store_true",
+                         help="Hourly check: alert once dhansetuhub.info stops resolving to loopback (i.e. is pointed somewhere real)")
+    parser.add_argument("--watchdog-scan", action="store_true",
+                         help="AI Watchdog: behavioral anomaly scan (denied-call spikes, cost spikes, file tamper, unexpected ports, voice probing) -- stores events in DB, prints report")
+    parser.add_argument("--watchdog-alert-check", action="store_true",
+                         help="Standalone watchdog alert: Telegram-alerts only on warning/critical watchdog_events since last check, using its own dedup state")
     parser.add_argument("--sentinel-alert-check", action="store_true",
                          help="Standalone sentinel alert: Telegram-alerts only on the latest --sentinel-check snapshot's real thresholds (disk/CPU/RAM/Ollama/DB/internet), using its own dedup state (unlike --alerts-sweep, never dumps unrelated historical backlog)")
+    parser.add_argument("--client-health-scan", action="store_true",
+                         help="Score every won lead's client health (product_usage/product_subscriptions signals) into client_health_scores")
+    parser.add_argument("--client-health-check", action="store_true",
+                         help="Standalone client-health alert: Telegram-alerts only on newly-scored clients below the at-risk threshold, using its own dedup state (unlike --alerts-sweep, never dumps unrelated historical backlog)")
 
     parser.add_argument("--bug-report", metavar="TITLE", help="Manually file a bug")
     parser.add_argument("--description", default="")
@@ -1109,7 +1193,15 @@ def main():
     parser.add_argument("--deepen", type=int, default=3, help="How many top findings to run through the full bug pipeline")
 
     parser.add_argument("--sentinel-check", action="store_true", help="Collect and print a real system health snapshot")
+    parser.add_argument("--sentinel-forecast", metavar="METRIC", default=None,
+                         help="Real linear-trend projection for a system_health column (e.g. disk_percent) from actual stored history")
+    parser.add_argument("--forecast-threshold", type=float, default=90.0, help="Threshold value for --sentinel-forecast (default 90.0)")
     parser.add_argument("--sentinel-loop", action="store_true", help="Continuous monitoring (foreground loop, Ctrl+C to stop)")
+    parser.add_argument("--payment-certify", metavar="PRODUCT", default=None,
+                         help="Real PRODUCTION READY/NOT verdict for a payment integration -- see --certify-provider/--certify-env/--certify-signals")
+    parser.add_argument("--certify-provider", default="PayU")
+    parser.add_argument("--certify-env", default="production")
+    parser.add_argument("--certify-signals", default="{}", help='JSON dict of real checklist signals, e.g. \'{"https_enforced": true}\'')
     parser.add_argument("--ops-scan", action="store_true", help="OPS-001: Sentinel -> CEO -> Telegram live health scan, stored in DB (+ Sheets if credentials given)")
     parser.add_argument("--security-scan", action="store_true", help="OPS-002: live security posture scan -> Telegram, stored in DB (+ Sheets if credentials given)")
     parser.add_argument("--website-audit", metavar="URL", help="WEB-001: live external website audit -> Telegram, stored in DB (+ Sheets if credentials given)")
@@ -1274,6 +1366,8 @@ def main():
     parser.add_argument("--interval", type=int, default=60, help="Seconds between --sentinel-loop collections")
 
     parser.add_argument("--initiative-add", metavar="TITLE", help="Track a new founder-facing task (Task 1, Task 2, ...)")
+    parser.add_argument("--initiative-track", default="task", choices=["task", "project"],
+                         help="'task' = web-based work (default), 'project' = big cross-platform software dev (Mac/Windows/Linux/iOS/Android)")
     parser.add_argument("--initiative-artifact-url", default=None, metavar="URL")
     parser.add_argument("--milestone-add", type=int, default=None, metavar="INITIATIVE_ID")
     parser.add_argument("--milestone-title", default=None, metavar="TITLE")
@@ -1411,8 +1505,20 @@ def _dispatch(args):
         return _cmd_alerts_sweep(args.telegram_token, args.telegram_chat_id)
     if args.security_alert_check:
         return _cmd_security_alert_check(args.telegram_token, args.telegram_chat_id)
+    if args.founder_review:
+        return _cmd_founder_review(args.telegram_token, args.telegram_chat_id)
+    if args.domain_dns_check:
+        return _cmd_domain_dns_check(args.telegram_token, args.telegram_chat_id)
+    if args.watchdog_scan:
+        return _cmd_watchdog_scan()
+    if args.watchdog_alert_check:
+        return _cmd_watchdog_alert_check(args.telegram_token, args.telegram_chat_id)
     if args.sentinel_alert_check:
         return _cmd_sentinel_alert_check(args.telegram_token, args.telegram_chat_id)
+    if args.client_health_scan:
+        return _cmd_client_health_scan()
+    if args.client_health_check:
+        return _cmd_client_health_check(args.telegram_token, args.telegram_chat_id)
     if args.bug_report:
         return _cmd_bug_report(args.bug_report, args.description, args.severity)
     if args.bug_scan:
@@ -1442,6 +1548,10 @@ def _dispatch(args):
         return _cmd_audit_run(args.deepen)
     if args.sentinel_check:
         return _cmd_sentinel_check()
+    if args.sentinel_forecast:
+        return _cmd_sentinel_forecast(args.sentinel_forecast, args.forecast_threshold)
+    if args.payment_certify:
+        return _cmd_payment_certify(args.payment_certify, args.certify_provider, args.certify_env, args.certify_signals)
     if args.sentinel_loop:
         return _cmd_sentinel_loop(args.interval, args.telegram_token, args.telegram_chat_id)
     if args.ops_scan:
@@ -1640,7 +1750,7 @@ def _dispatch(args):
     if args.discovery_list:
         return _cmd_discovery_list(args.discovery_status)
     if args.initiative_add:
-        return _cmd_initiative_add(args.initiative_add, args.initiative_artifact_url)
+        return _cmd_initiative_add(args.initiative_add, args.initiative_artifact_url, track=args.initiative_track)
     if args.milestone_add is not None:
         if not args.milestone_title:
             print(json.dumps({"error": "--milestone-add requires --milestone-title"}))

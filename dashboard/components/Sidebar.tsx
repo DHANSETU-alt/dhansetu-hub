@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AngellaPresence } from "@/components/AngellaPresence";
+import { SHAKTHI_OS_VERSION } from "@/lib/version";
 import type { PaAngellaStatus } from "@/lib/api";
 
 type NavItem = { href: string; label: string; soon?: boolean };
@@ -40,7 +41,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { href: "/costs", label: "Cost Ledger" },
       { href: "/tasks", label: "Task Pipeline" },
       { href: "/workers", label: "Worker Pool" },
-      { href: "/agent-health", label: "Agent Health Monitor", soon: true },
+      { href: "/agent-health", label: "Agent Health Monitor" },
     ],
   },
   {
@@ -56,8 +57,9 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { href: "/businesses", label: "Workspace Manager", soon: true },
       { href: "/website-builder", label: "Website Builder" },
       { href: "/websites", label: "Website Monitoring" },
-      { href: "/pdf-studio", label: "Dhansetu PDF Studio" },
-      { href: "/peopledesk", label: "Dhansetu PeopleDesk" },
+      { href: "/client-success", label: "Client Success" },
+      { href: "/pdf-studio", label: "Dhansetu PDF Studio", soon: true },
+      { href: "/peopledesk", label: "Dhansetu PeopleDesk", soon: true },
       { href: "/trading", label: "Trading OS (paper)" },
       { href: "/dhansetu-ai", label: "Dhansetu AI" },
     ],
@@ -71,6 +73,15 @@ export function Sidebar({ angellaStatus }: { angellaStatus?: PaAngellaStatus | n
       <div className="px-4 py-5 border-b border-[var(--border)]">
         <div className="text-sm font-semibold tracking-tight">SHAKTHI AI OS</div>
         <div className="text-[11px] text-[var(--muted-foreground)] mt-0.5">Founder Control Center</div>
+        <div
+          className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2 py-0.5 text-[10px] font-mono-num text-[var(--muted-foreground)]"
+          title={`${SHAKTHI_OS_VERSION.codename} · commit ${SHAKTHI_OS_VERSION.gitCommit} · ${SHAKTHI_OS_VERSION.environment}`}
+        >
+          <span className="text-[var(--ink)] font-semibold">{SHAKTHI_OS_VERSION.osName}</span>
+          <span>v{SHAKTHI_OS_VERSION.version}</span>
+          <span className="opacity-60">&bull;</span>
+          <span className="uppercase tracking-wide">{SHAKTHI_OS_VERSION.environment}</span>
+        </div>
       </div>
       <AngellaPresence status={angellaStatus ?? null} />
       <div className="py-3">

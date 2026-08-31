@@ -7,10 +7,10 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { motion } from "framer-motion";
-import type { Worker, LoadBalancerStatus } from "@/lib/api";
-import type { AgentNode } from "@/lib/systemStatus";
+import type { Worker, LoadBalancerStatus, FullTask } from "@/lib/api";
+import { PERSONA_NAME, PERSONA_FACE, type AgentNode } from "@/lib/systemStatus";
 import { AutoRefresh } from "@/components/AutoRefresh";
-import { MatrixRain, FireflySwarm } from "@/components/AmbientEffects";
+import { MatrixRain } from "@/components/AmbientEffects";
 
 export type StatusData = {
   nodes: AgentNode[];
@@ -18,11 +18,34 @@ export type StatusData = {
   loadBalancer: LoadBalancerStatus;
   ceoHealth: { status: string; failure_count: number };
   sentinelOk: boolean;
+  recentActivity: FullTask[];
+  kpis: {
+    totalAgents: number;
+    activeAgents: number;
+    missionsPerMinute: number;
+    successRatePercent: number | null;
+    bottleneckCount: number;
+  };
 };
 
 const GLOW: Record<string, string> = {
   cyan: "#22d3ee", violet: "#a78bfa", amber: "#fbbf24", rose: "#fb7185", emerald: "#34d399", slate: "#94a3b8",
 };
+
+// Top KPI row (Executive Neural Network spec §7) -- five compact real-data
+// tiles, no fabricated trend arrows since there's no stored KPI history to
+// derive a real delta from yet.
+function KpiPill({ label, value, tone = "slate" }: { label: string; value: string; tone?: keyof typeof GLOW }) {
+  return (
+    <div
+      className="rounded-lg border px-3 py-1.5 backdrop-blur-sm"
+      style={{ borderColor: `${GLOW[tone]}33`, background: "rgba(6,9,11,0.65)" }}
+    >
+      <div className="text-[9px] uppercase tracking-[0.14em] text-slate-500">{label}</div>
+      <div className="text-base font-semibold font-mono tabular-nums mt-0.5" style={{ color: GLOW[tone] }}>{value}</div>
+    </div>
+  );
+}
 
 // Deterministic per-node "randomness" -- same label always produces the
 // same float duration/delay/amplitude, so the buoy motion doesn't jump or
@@ -34,10 +57,25 @@ function seedFrom(s: string): number {
   return h;
 }
 
+// Real elapsed time since a real created_at timestamp -- not a fabricated
+// "duration" (tasks don't store a completion time, see systemStatus.ts).
+function timeAgo(iso: string): string {
+  const t = new Date(iso.includes("Z") ? iso : iso + "Z").getTime();
+  const seconds = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+  return `${Math.floor(seconds / 86400)}d`;
+}
+
+const ACTIVITY_STATUS_TONE: Record<string, string> = {
+  done: "#34d399", running: "#22d3ee", pending: "#94a3b8", failed: "#fb7185",
+};
+
 // --- Custom node: a glowing glass orb, pulses when recently active ---
 function OrbNode({ data }: NodeProps) {
   const d = data as unknown as {
-    label: string; sublabel: string; color: string; size: "xl" | "lg" | "md" | "sm" | "xs"; active: boolean;
+    label: string; sublabel: string; color: string; size: "xl" | "lg" | "md" | "sm" | "xs"; active: boolean; face?: string;
   };
   const glow = GLOW[d.color] || GLOW.slate;
   // "xs" is for larger rosters (see ORB_SIZE_TIERS in MissionControlFlow
@@ -121,6 +159,7 @@ function OrbNode({ data }: NodeProps) {
           }}
         />
         <div className="relative z-10 flex flex-col items-center text-center px-1.5 select-none">
+          {d.face && <span style={{ fontSize: fontSize + 6, lineHeight: 1, marginBottom: 2 }}>{d.face}</span>}
           <span className="font-semibold leading-tight" style={{ fontSize, color: "#f8fafc" }}>{d.label}</span>
           {d.sublabel && (
             <span className="mt-1 leading-tight font-mono" style={{ fontSize: fontSize - 3.5, color: glow }}>{d.sublabel}</span>
@@ -200,7 +239,11 @@ function RadarNode({ data }: NodeProps) {
       <div
         className="absolute inset-0 rounded-full"
         style={{
-          background: "conic-gradient(from 0deg, transparent 0deg, rgba(167,139,250,0.5) 14deg, transparent 70deg)",
+          // Cyan, not violet -- was reading as the "large purple gradient"
+          // the founder kept flagging across reference-image comparisons
+          // tonight. Matches the ripple rings below and the spec's own
+          // color language (cyan = live info flow), restrained at low alpha.
+          background: "conic-gradient(from 0deg, transparent 0deg, rgba(34,211,238,0.3) 14deg, transparent 70deg)",
           animation: "radarSpin 5s linear infinite",
           mixBlendMode: "screen",
         }}
@@ -231,7 +274,7 @@ type BrandProps = { eyebrow?: string; title?: string; backLabel?: string; backHr
 // so a new squad added later doesn't silently vanish from the chart.
 const SQUAD_ORDER = ["Front End Design", "GStack", "Get Shit Done"];
 
-export default function MissionControlFlow({ status, activityWindowMinutes, brand }: { status: StatusData; activityWindowMinutes: number; brand?: BrandProps }) {
+export default function MissionControlFlow({ status, activityWindowMinutes, brand, variant = "fullscreen" }: { status: StatusData; activityWindowMinutes: number; brand?: BrandProps; variant?: "fullscreen" | "panel" }) {
   const eyebrow = brand?.eyebrow ?? "GVC OS · Mission Control";
   const title = brand?.title ?? "Living System View";
   const backLabel = brand?.backLabel ?? "← Executive Dashboard";
@@ -240,7 +283,8 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
   useEffect(() => setMounted(true), []);
 
   const { nodes, edges } = useMemo(() => {
-    const label = (a: AgentNode) => a.name.replace(/^Shakthi\s+/, "");
+    const label = (a: AgentNode) => PERSONA_NAME[a.id] ?? a.name.replace(/^Shakthi\s+/, "");
+    const face = (a: AgentNode) => PERSONA_FACE[a.id];
 
     const paAgent = status.nodes.find((a) => a.id === "pa_angella");
     const ceoAgent = status.nodes.find((a) => a.id === "ceo");
@@ -261,126 +305,113 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
       ...[...bySquad.keys()].filter((s) => !SQUAD_ORDER.includes(s)),
     ];
 
-    // Rectangular flow layout: Founder / PA Angella / CEO / Manager form a
-    // vertical hub stack at top-center, and every squad's members wrap
-    // into a clean row/column grid beneath their own squad label -- pure
-    // rows and columns, no circular geometry. Same lesson learned from the
-    // earlier radial version: gaps are set as MULTIPLES of orb size, not
-    // fixed pixels, because fitView rescales the whole diagram to fill the
-    // viewport -- a flat pixel gap just gets zoomed out to the same visual
-    // density; only a gap-to-orb-size ratio survives that rescale.
+    // Radial hub-and-spoke layout: Founder/Angella/CEO/Manager stack at
+    // the true center, real squads arranged as clusters radiating around
+    // it at even angles (Executive Neural Network reference, 2026-09-01),
+    // each squad's own members arranged in a small arc around their
+    // cluster's own angular position. Gaps still scale off orb size, not
+    // fixed pixels -- fitView rescales the whole diagram, so only a
+    // ratio-to-orb-size survives that rescale, same lesson as the earlier
+    // rectangular layout.
     const N = Math.max(leafAgents.length, 1);
     const leafSize: "sm" | "xs" = N > 24 ? "xs" : "sm";
     const leafOrbPx = leafSize === "xs" ? 66 : 78;
-    const leafHalf = leafOrbPx / 2;
-    const GAP_X = leafOrbPx * 1.9;
-    const GAP_Y = leafOrbPx * 2.1;
-    const CLUSTER_GAP_X = leafOrbPx * 2.6;
-    const ROWS_PER_CLUSTER = 2;
+    const numSquads = Math.max(squadKeys.length, 1);
 
     const nodes: Node[] = [];
     const edges: Edge[] = [];
 
-    // Squad clusters, left to right, each wrapping into ROWS_PER_CLUSTER
-    // rows so one large squad doesn't stretch the whole diagram into a
-    // single endless row.
-    const xForAgent = new Map<string, number>();
-    const rowForAgent = new Map<string, number>();
-    const clusterRanges: { squad: string; x0: number; x1: number }[] = [];
-    let xCursor = 0;
-    squadKeys.forEach((squad) => {
-      const members = bySquad.get(squad)!;
-      const half = Math.ceil(members.length / ROWS_PER_CLUSTER);
-      const rows = [members.slice(0, half), members.slice(half)];
-      const maxRowLen = Math.max(rows[0].length, rows[1].length, 1);
-      const start = xCursor;
-      rows.forEach((rowMembers, rowIdx) => {
-        rowMembers.forEach((m, colIdx) => {
-          xForAgent.set(m.id, xCursor + colIdx * GAP_X);
-          rowForAgent.set(m.id, rowIdx);
-        });
-      });
-      xCursor += maxRowLen * GAP_X;
-      clusterRanges.push({ squad, x0: start, x1: xCursor - GAP_X });
-      xCursor += CLUSTER_GAP_X;
-    });
-    const totalWidth = Math.max(xCursor - CLUSTER_GAP_X, leafOrbPx * 4);
-    const cx = totalWidth / 2;
-
-    // Central hub stack -- Founder, PA Angella, CEO, Manager, top to
-    // bottom, horizontally centered over the whole grid below it.
+    const cx = 0, cy = 0;
     const sizePx: Record<"xl" | "lg" | "md", number> = { xl: 150, lg: 118, md: 96 };
-    const founderY = 0;
-    const paY = founderY + sizePx.xl + leafOrbPx * 0.5;
-    const ceoY = paY + sizePx.lg + leafOrbPx * 0.5;
-    const managerY = ceoY + sizePx.lg + leafOrbPx * 0.5;
-    const labelY = managerY + sizePx.md + leafOrbPx * 1.1;
-    const leafY0 = labelY + leafOrbPx * 0.9;
-    const leafY1 = leafY0 + GAP_Y;
-    const workerY = leafY1 + GAP_Y * 1.3;
+    // Cluster ring: how far each squad's center sits from the hub. Scales
+    // with squad count so more squads don't overlap each other.
+    const CLUSTER_RADIUS = leafOrbPx * (3.4 + numSquads * 0.35);
+    // Member ring: how far a squad's own agents sit from THEIR squad's
+    // angular position, arranged as a small arc facing outward.
+    const MEMBER_RADIUS = leafOrbPx * 1.9;
 
-    const radarSize = Math.max(totalWidth, workerY - founderY) * 1.4 + 300;
-    nodes.push({
-      id: "radar-bg", type: "radar",
-      position: { x: cx - radarSize / 2, y: (founderY + workerY) / 2 - radarSize / 2 },
-      draggable: false, selectable: false, zIndex: -1,
-      data: { size: radarSize },
-    });
+    const angleStep = (2 * Math.PI) / numSquads;
+    // Offset by half a step so squads land diagonally (NE/SE/SW/NW for 4
+    // squads), never straight up (collides with the fixed header overlay)
+    // or straight down (collides with the hub stack's own vertical line,
+    // which is what put "Get Shit Done" right on top of Duke before).
+    const startAngle = -Math.PI / 2 + angleStep / 2;
 
-    const stackOrder: { id: string; label: string; sublabel: string; color: string; size: "xl" | "lg" | "md"; active: boolean; y: number }[] = [
-      { id: "founder", label: "FOUNDER", sublabel: "", color: "cyan", size: "xl", active: true, y: founderY },
+    const hubStack: { id: string; label: string; face?: string; sublabel: string; color: string; size: "xl" | "lg" | "md"; active: boolean }[] = [
+      { id: "founder", label: "FOUNDER", sublabel: "", color: "cyan", size: "xl", active: true },
     ];
-    // PA Angella -- the founder's own prompt-master PA, always between
-    // Founder and CEO. Not part of any squad (she's not a leaf, she's a
-    // fixed relay tier), so she's excluded from leafAgents above.
-    if (paAgent) stackOrder.push({ id: "pa_angella", label: "PA ANGELLA", sublabel: paAgent.sublabel, color: paAgent.color, size: "lg", active: paAgent.active, y: paY });
-    if (ceoAgent) stackOrder.push({ id: "ceo", label: label(ceoAgent), sublabel: ceoAgent.sublabel, color: ceoAgent.color, size: "lg", active: ceoAgent.active, y: ceoY });
-    if (managerAgent) stackOrder.push({ id: "manager", label: label(managerAgent), sublabel: managerAgent.sublabel, color: managerAgent.color, size: "md", active: managerAgent.active, y: managerY });
+    if (paAgent) hubStack.push({ id: "pa_angella", label: PERSONA_NAME.pa_angella, face: PERSONA_FACE.pa_angella, sublabel: paAgent.sublabel, color: paAgent.color, size: "lg", active: paAgent.active });
+    if (ceoAgent) hubStack.push({ id: "ceo", label: label(ceoAgent), face: face(ceoAgent), sublabel: ceoAgent.sublabel, color: ceoAgent.color, size: "lg", active: ceoAgent.active });
+    if (managerAgent) hubStack.push({ id: "manager", label: label(managerAgent), face: face(managerAgent), sublabel: managerAgent.sublabel, color: managerAgent.color, size: "md", active: managerAgent.active });
 
-    let hubId = stackOrder[0].id;
-    stackOrder.forEach((n, i) => {
+    // Hub stack sits as a tight vertical column right at the true center
+    // (matches the reference's "Mission Orchestrator" hub) -- Founder on
+    // top, the real relay chain descending toward the center point that
+    // every squad radiates out from.
+    let stackTop = cy - (hubStack.reduce((sum, n) => sum + sizePx[n.size], 0) + (hubStack.length - 1) * leafOrbPx * 0.5) / 2;
+    let hubId = hubStack[0].id;
+    hubStack.forEach((n, i) => {
       const h = sizePx[n.size];
       nodes.push({
-        id: n.id, type: "orb", position: { x: cx - h / 2, y: n.y }, draggable: false,
-        data: { label: n.label, sublabel: n.sublabel, color: n.color, size: n.size, active: n.active },
+        id: n.id, type: "orb", position: { x: cx - h / 2, y: stackTop }, draggable: false,
+        data: { label: n.label, face: n.face, sublabel: n.sublabel, color: n.color, size: n.size, active: n.active },
       });
       if (i > 0) {
-        edges.push({ id: `e-${stackOrder[i - 1].id}-${n.id}`, source: stackOrder[i - 1].id, target: n.id, type: "flow", data: { color: n.color, active: true } });
+        edges.push({ id: `e-${hubStack[i - 1].id}-${n.id}`, source: hubStack[i - 1].id, target: n.id, type: "flow", data: { color: n.color, active: true } });
       }
+      stackTop += h + leafOrbPx * 0.5;
       hubId = n.id;
     });
 
-    clusterRanges.forEach((cr) => {
-      const midX = (cr.x0 + cr.x1) / 2;
+    squadKeys.forEach((squad, si) => {
+      const members = bySquad.get(squad)!;
+      const angle = startAngle + si * angleStep;
+      const clusterX = cx + CLUSTER_RADIUS * Math.cos(angle);
+      const clusterY = cy + CLUSTER_RADIUS * Math.sin(angle);
+
       nodes.push({
-        id: `label-${cr.squad}`, type: "label", position: { x: midX - 110 + leafHalf, y: labelY },
-        draggable: false, selectable: false, data: { label: cr.squad },
+        id: `label-${squad}`, type: "label", position: { x: clusterX - 110, y: clusterY - leafOrbPx * 1.5 },
+        draggable: false, selectable: false, data: { label: squad },
+      });
+      edges.push({ id: `e-${hubId}-cluster-${squad}`, source: hubId, target: members[0]?.id ?? `label-${squad}`, type: "flow", data: { color: members[0]?.color ?? "slate", active: members.some((m) => m.active) } });
+
+      // Members fan out in a small arc around their own cluster position,
+      // facing outward (away from the hub) -- a real mini fan, not a
+      // straight line, so a squad of 6-8 agents still reads as one
+      // cluster instead of a spoke.
+      const arcSpan = Math.min(angleStep * 0.9, Math.PI / 2.2);
+      members.forEach((m, mi) => {
+        const memberAngle = angle - arcSpan / 2 + (members.length > 1 ? (arcSpan * mi) / (members.length - 1) : arcSpan / 2);
+        const mx = clusterX + MEMBER_RADIUS * Math.cos(memberAngle);
+        const my = clusterY + MEMBER_RADIUS * Math.sin(memberAngle);
+        nodes.push({
+          id: m.id, type: "orb", position: { x: mx, y: my }, draggable: false,
+          data: { label: label(m), face: face(m), sublabel: m.sublabel, color: m.color, size: leafSize, active: m.active },
+        });
+        if (mi > 0) {
+          edges.push({ id: `e-${members[0].id}-${m.id}`, source: members[0].id, target: m.id, type: "flow", data: { color: m.color, active: m.active } });
+        } else {
+          edges.push({ id: `e-${hubId}-${m.id}`, source: hubId, target: m.id, type: "flow", data: { color: m.color, active: m.active } });
+        }
       });
     });
 
-    leafAgents.forEach((a) => {
-      const x = xForAgent.get(a.id) ?? 0;
-      const y = rowForAgent.get(a.id) === 1 ? leafY1 : leafY0;
-      nodes.push({
-        id: a.id, type: "orb", position: { x, y }, draggable: false,
-        data: { label: label(a), sublabel: a.sublabel, color: a.color, size: leafSize, active: a.active },
-      });
-      edges.push({ id: `e-${hubId}-${a.id}`, source: hubId, target: a.id, type: "flow", data: { color: a.color, active: a.active } });
-    });
-
-    // Worker pools -- one row beneath the whole grid, linked to one real
-    // agent per squad that actually feeds that pool (worker_registry.
-    // TASK_KINDS' real rapid/engineering/infra split).
+    // Worker pools -- placed as an outer ring beyond the squad clusters,
+    // each linked to one real agent per squad that actually feeds it
+    // (worker_registry.TASK_KINDS' real rapid/engineering/infra split).
     const workerTypes = ["rapid", "engineering", "infra"];
     const servicedBy: Record<string, string[]> = {
       rapid: ["chrome_developer", "finance"], engineering: ["bug_fixer", "website_builder"], infra: ["security", "qa"],
     };
+    const OUTER_RADIUS = CLUSTER_RADIUS + MEMBER_RADIUS * 1.6;
     workerTypes.forEach((wt, i) => {
-      const x = cx - leafHalf + (i - 1) * GAP_X * 1.6;
+      const angle = Math.PI / 2 + (i - 1) * 0.5; // clustered toward the bottom, out of the squads' way
+      const x = cx + OUTER_RADIUS * Math.cos(angle);
+      const y = cy + OUTER_RADIUS * Math.sin(angle);
       const busy = status.workers.filter((w) => w.worker_type === wt && w.status === "busy").length;
       const total = status.workers.filter((w) => w.worker_type === wt).length;
       nodes.push({
-        id: `worker-${wt}`, type: "orb", position: { x, y: workerY }, draggable: false,
+        id: `worker-${wt}`, type: "orb", position: { x, y }, draggable: false,
         data: { label: `${wt.toUpperCase()}\nPOOL`, sublabel: `${busy}/${total} busy`, color: "slate", size: leafSize, active: busy > 0 },
       });
       servicedBy[wt].forEach((agentId) => {
@@ -390,11 +421,22 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
       });
     });
 
+    const radarSize = (CLUSTER_RADIUS + MEMBER_RADIUS) * 2.6;
+    nodes.push({
+      id: "radar-bg", type: "radar",
+      position: { x: cx - radarSize / 2, y: cy - radarSize / 2 },
+      draggable: false, selectable: false, zIndex: -1,
+      data: { size: radarSize },
+    });
+
     return { nodes, edges };
   }, [status]);
 
   return (
-    <div className="fixed inset-0 overflow-hidden" style={{ background: "radial-gradient(ellipse at 50% 40%, #0d1420 0%, #05070a 70%)" }}>
+    <div
+      className={`${variant === "fullscreen" ? "fixed inset-0" : "relative w-full h-full"} overflow-hidden`}
+      style={{ background: variant === "fullscreen" ? "#020303" : "transparent" }}
+    >
       <style>{`
         @keyframes radarSpin { to { transform: rotate(360deg); } }
         @keyframes radarRipple {
@@ -404,8 +446,10 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
         @keyframes neonOrbit { to { transform: rotate(360deg); } }
       `}</style>
 
-      {mounted && <MatrixRain />}
-      {mounted && <FireflySwarm count={160} />}
+      {/* "panel" variant (the /concept3 composite) shares the one page-level
+          matrix rain instead of owning a second canvas -- avoids a duplicate
+          RAF loop and the layered-background occlusion bug found tonight. */}
+      {mounted && variant === "fullscreen" && <MatrixRain />}
 
       <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-8 py-5">
         <div>
@@ -414,10 +458,24 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
         </div>
         <div className="flex items-center gap-3">
           <AutoRefresh intervalSeconds={1} />
-          <a href={backHref} className="text-xs font-mono text-slate-400 hover:text-slate-100 border border-slate-700 rounded-full px-3 py-1.5">
-            {backLabel}
-          </a>
+          {backLabel && (
+            <a href={backHref} className="text-xs font-mono text-slate-400 hover:text-slate-100 border border-slate-700 rounded-full px-3 py-1.5">
+              {backLabel}
+            </a>
+          )}
         </div>
+      </div>
+
+      <div className="absolute top-16 left-8 right-8 z-10 grid grid-cols-5 gap-2 max-w-3xl">
+        <KpiPill label="Total Agents" value={String(status.kpis.totalAgents)} />
+        <KpiPill label="Active Agents" value={String(status.kpis.activeAgents)} tone="emerald" />
+        <KpiPill label="Missions / Min" value={status.kpis.missionsPerMinute.toFixed(1)} tone="cyan" />
+        <KpiPill
+          label="Success Rate"
+          value={status.kpis.successRatePercent !== null ? `${status.kpis.successRatePercent}%` : "N/A"}
+          tone={status.kpis.successRatePercent === null ? "slate" : status.kpis.successRatePercent >= 90 ? "emerald" : "amber"}
+        />
+        <KpiPill label="Bottlenecks" value={String(status.kpis.bottleneckCount)} tone={status.kpis.bottleneckCount > 0 ? "rose" : "emerald"} />
       </div>
 
       {mounted && (
@@ -428,7 +486,7 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
           edgeTypes={edgeTypes}
           fitView
           fitViewOptions={{
-            padding: 0.08,
+            padding: 0.16,
             // Real bug just found: the giant radar-sweep node's bounding
             // box was included in fitView's calculation, so React Flow
             // zoomed out to fit a mostly-empty 2000px+ circle instead of
@@ -453,6 +511,30 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
           <Background variant={BackgroundVariant.Dots} gap={28} size={1} color="#1e293b" />
         </ReactFlow>
       )}
+
+      {/* Live Activity Stream (spec §11) -- real /api/tasks rows, newest
+          first. No fabricated DURATION column (see systemStatus.ts note);
+          shows real elapsed time since created_at instead. */}
+      <div
+        className="absolute bottom-14 left-8 z-10 w-96 max-h-52 overflow-y-auto rounded-lg border backdrop-blur-sm"
+        style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(6,9,11,0.75)" }}
+      >
+        <div className="sticky top-0 grid grid-cols-[3rem_5rem_1fr_2.5rem] gap-2 px-3 py-1.5 text-[9px] uppercase tracking-[0.12em] text-slate-500 border-b border-white/5" style={{ background: "rgba(6,9,11,0.92)" }}>
+          <span>Time</span><span>Agent</span><span>Action</span><span>Status</span>
+        </div>
+        {status.recentActivity.length === 0 ? (
+          <div className="px-3 py-3 text-[11px] text-slate-500">No real task activity recorded yet.</div>
+        ) : (
+          status.recentActivity.map((t) => (
+            <div key={t.id} className="grid grid-cols-[3rem_5rem_1fr_2.5rem] gap-2 px-3 py-1 text-[10px] font-mono text-slate-300 border-b border-white/5 last:border-0">
+              <span className="text-slate-500 tabular-nums">{timeAgo(t.created_at)}</span>
+              <span className="truncate" title={t.agent_id}>{PERSONA_NAME[t.agent_id] ?? t.agent_id}</span>
+              <span className="truncate" title={t.goal}>{t.goal}</span>
+              <span className="font-semibold" style={{ color: ACTIVITY_STATUS_TONE[t.status] ?? "#94a3b8" }}>{t.status}</span>
+            </div>
+          ))
+        )}
+      </div>
 
       <div className="absolute bottom-5 right-8 z-10 flex items-center gap-5 text-[11px] font-mono text-slate-400">
         <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" /> Healthy</span>

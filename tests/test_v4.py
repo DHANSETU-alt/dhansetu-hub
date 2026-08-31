@@ -212,7 +212,7 @@ class TestSentinelOpsReport(unittest.TestCase):
         captured.clear()
         with patch.object(tg, "_call", fake_call):
             tg.send_message("fake-token", "123", "hello")
-        self.assertEqual(captured.get("parse_mode"), "Markdown")
+        self.assertEqual(captured.get("parse_mode"), "MarkdownV2")
 
 
 if __name__ == "__main__":

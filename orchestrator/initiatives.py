@@ -8,9 +8,9 @@ from its own milestones -- never a hand-picked number.
 from . import db
 
 
-def add_initiative(title: str, artifact_url: str = None) -> dict:
+def add_initiative(title: str, artifact_url: str = None, track: str = "task") -> dict:
     with db.get_conn() as conn:
-        initiative_id = db.insert_initiative(conn, title, artifact_url)
+        initiative_id = db.insert_initiative(conn, title, artifact_url, track=track)
         return _get(conn, initiative_id)
 
 
