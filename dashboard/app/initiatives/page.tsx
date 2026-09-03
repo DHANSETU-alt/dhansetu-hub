@@ -137,8 +137,9 @@ export default async function InitiativesPage() {
   }
 
   const initiatives = result.initiatives;
-  const tasks = initiatives.filter((i) => i.track !== "project");
+  const tasks = initiatives.filter((i) => i.track === "task");
   const projects = initiatives.filter((i) => i.track === "project");
+  const osTrack = initiatives.filter((i) => i.track === "os");
 
   return (
     <div className="space-y-6">
@@ -146,9 +147,9 @@ export default async function InitiativesPage() {
         <div>
           <h1 className="text-xl font-semibold">Founder Tasks &amp; Projects</h1>
           <p className="text-sm text-[var(--muted-foreground)] mt-1">
-            Two separate tracks, never mixed: Tasks are real web-based work; Projects are big cross-platform
-            software builds (Mac, Windows, Linux, iOS, Android). Percent complete is computed from real milestones
-            below, never a hand-picked number.
+            Three separate tracks, never mixed: Tasks are real web-based work; Projects are big cross-platform
+            software builds (Mac, Windows, Linux, iOS, Android); OS is reserved exclusively for Shakthi_OS's own
+            core upgrades. Percent complete is computed from real milestones below, never a hand-picked number.
           </p>
         </div>
         <AutoRefresh intervalSeconds={20} />
@@ -168,6 +169,13 @@ export default async function InitiativesPage() {
           emptyHint={`No projects tracked yet. Use --initiative-add "TITLE" --initiative-track project from the CLI to start Project 1.`}
           label="Project"
           items={projects}
+        />
+        <TrackColumn
+          heading="OS (Shakthi_OS core)"
+          description="Special track, reserved only for Shakthi_OS's own core upgrades — not customer-facing apps or web work."
+          emptyHint={`No OS-track items yet. Use --initiative-add "TITLE" --initiative-track os from the CLI to start OS 1.`}
+          label="OS"
+          items={osTrack}
         />
       </div>
     </div>

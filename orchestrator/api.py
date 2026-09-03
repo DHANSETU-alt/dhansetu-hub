@@ -1,7 +1,13 @@
 """
-JSON API for the Next.js dashboard. Local-only, no auth -- same trust model
-as the CLI (trusted-local-operator), explicitly not yet safe to expose
-beyond localhost. See README "Security gaps."
+JSON API for the Next.js dashboard. Loopback (127.0.0.1) traffic is
+always trusted, no auth -- same trust model as the CLI. LAN/mobile access
+(Task 13, Founder Command Center) is real but opt-in: set SHAKTHI_API_HOST
+to a non-loopback address AND SHAKTHI_API_TOKEN to a real secret, and
+every request that doesn't originate from loopback must present that
+token (X-Shakthi-Token header or ?token= query param) or gets a 401. No
+token configured -> the server refuses to bind anywhere but loopback,
+it does not silently expose itself. See README "Security gaps" and the
+Founder Command Center README section for mobile setup.
 
 stdlib http.server, not FastAPI -- no new dependency for a handful of
 read-mostly endpoints returning data the CLI commands already compute.
@@ -9,13 +15,45 @@ Reaching for a framework here would be the first dependency added purely
 for the API layer; this doesn't need one yet.
 """
 import json
+import os
+import socket
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 from . import ceo as ceo_mod
-from . import config, db, finance, security, sentinel
+from . import config, db, finance, pa_angella, security, sentinel, website_health
 
 ROUTES = {}
+
+# Founder Command Center mobile/LAN access (Task 13). Real security
+# boundary, not cosmetic: SHAKTHI_API_TOKEN, when set, is required on
+# every request that does NOT originate from loopback (127.0.0.1/::1).
+# Loopback traffic -- every existing dashboard server-component fetch,
+# every test, every CLI call -- is exempt so none of that has to change.
+# Only a request arriving over the LAN (a phone on the same WiFi hitting
+# the machine's real IP) is gated. The token is never logged and never
+# echoed back in any response.
+API_TOKEN = os.environ.get("SHAKTHI_API_TOKEN", "").strip()
+LOOPBACK_ADDRESSES = {"127.0.0.1", "::1"}
+
+
+def _real_lan_ip() -> str | None:
+    """Best-effort real LAN IP -- opens a UDP socket to a public address
+    (no packet actually sent, UDP connect() just picks the outbound
+    interface) so this reflects the actual network interface in use,
+    not just the first hostname resolution, which can return a
+    Docker-internal or loopback address on some machines."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+        if ip and not ip.startswith("127."):
+            return ip
+    except OSError:
+        pass
+    return None
 
 
 def route(path):
@@ -299,6 +337,48 @@ def sentinel_history(qs):
         return {"snapshots": db.recent_health_snapshots(conn, limit=_qs_int(qs, "limit") or 50)}
 
 
+@route("/api/website-health/latest")
+def website_health_latest(qs):
+    with db.get_conn() as conn:
+        sites = db.list_watched_websites(conn)
+        rows = []
+        for site in sites:
+            latest = db.latest_health_check(conn, site["id"])
+            rows.append({**site, "latest_check": latest, "in_alert": website_health.alert_flag(site, latest)})
+    return {"sites": rows}
+
+
+@route("/api/website-health/refresh")
+def website_health_refresh(qs):
+    # Real synchronous check-and-record, same "GET route with a real write
+    # side effect" pattern as /api/sentinel/collect -- this framework is
+    # GET-only (see the module docstring), so manual refresh is a GET that
+    # does real work, not a fetch of stale data.
+    results = website_health.check_all_watched_sites()
+    return {"sites": results}
+
+
+@route("/api/website-health/incidents")
+def website_health_incidents(qs):
+    with db.get_conn() as conn:
+        incidents = db.list_incidents(conn, limit=_qs_int(qs, "limit") or 50)
+        sites_by_id = {s["id"]: s for s in db.list_watched_websites(conn, active_only=False)}
+    for inc in incidents:
+        site = sites_by_id.get(inc["website_id"])
+        inc["website_label"] = site["label"] if site else f"website #{inc['website_id']}"
+        inc["website_url"] = site["url"] if site else None
+    return {"incidents": incidents}
+
+
+@route("/api/website-health/history")
+def website_health_history(qs):
+    website_id = _qs_int(qs, "website_id")
+    if website_id is None:
+        return {"error": "website_id is required"}
+    with db.get_conn() as conn:
+        return {"checks": db.history_health_checks(conn, website_id, limit=_qs_int(qs, "limit") or 50)}
+
+
 @route("/api/knowledge")
 def knowledge_list(qs):
     category = qs.get("category", [None])[0]
@@ -393,6 +473,24 @@ def pa_angella_status(qs):
         last_task = db.last_task_for_agent(conn, "pa_angella")
         recent_count = db.recent_task_count_for_agent(conn, "pa_angella", minutes=30)
     return {"last_task": last_task, "active": recent_count > 0, "recent_task_count": recent_count}
+
+
+# Founder Command Center -- a real GET-triggered mutation (PA Angella ->
+# CEO dispatch), not REST-pure, but this framework is already explicitly
+# "trusted-local-operator, no auth" (see module docstring) and adding a
+# whole do_POST code path for one endpoint isn't worth it yet.
+@route("/api/command-center/submit")
+def command_center_submit(qs):
+    text = (qs.get("text", [""])[0] or "").strip()
+    if not text:
+        return {"error": "empty command"}
+    return pa_angella.refine_and_send_to_ceo(text)
+
+
+@route("/api/command-center/logs")
+def command_center_logs(qs):
+    with db.get_conn() as conn:
+        return {"events": db.recent_task_events(conn, limit=_qs_int(qs, "limit") or 50)}
 
 
 @route("/api/initiatives")
@@ -532,23 +630,77 @@ def health(qs):
     }
 
 
+@route("/api/v31/missions")
+def v31_missions(qs):
+    from shakthi.missions import MissionStore
+    return {"missions": MissionStore().list()}
+
+
+@route("/api/v31/world-model")
+def v31_world_model(qs):
+    from shakthi.world_model import WorldModel
+    return {"entities": WorldModel().entities()}
+
+
+@route("/api/v31/audit")
+def v31_audit(qs):
+    from shakthi.audit import AuditLog
+    log = AuditLog()
+    return {"chain_valid": log.verify(), "entries": log.entries()[:100]}
+
+
+@route("/api/v31/events")
+def v31_events(qs):
+    from shakthi.event_bus import EventBus
+    return {"events": EventBus().recent(limit=_qs_int(qs, "limit") or 100)}
+
+
+@route("/api/v31/governance")
+def v31_governance(qs):
+    from shakthi.governance import AutonomyLevel, TruthState
+    return {
+        "autonomy_levels": [{"name": level.name, "value": int(level)} for level in AutonomyLevel],
+        "truth_states": [state.value for state in TruthState],
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass  # keep stdout clean; errors still surface via 500s below
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        qs = parse_qs(parsed.query)
+        if API_TOKEN and self.client_address[0] not in LOOPBACK_ADDRESSES:
+            supplied = self.headers.get("X-Shakthi-Token") or qs.get("token", [""])[0]
+            if supplied != API_TOKEN:
+                self._send(401, {"error": "missing or invalid token"})
+                return
         handler = ROUTES.get(parsed.path)
         if not handler:
             self._send(404, {"error": f"no such route: {parsed.path}"})
             return
         try:
-            result = handler(parse_qs(parsed.query))
+            result = handler(qs)
             self._send(200, result)
         except Exception as e:
+            # Real bug found live (Task 13 verification, 2026-09-03):
+            # under the heavy concurrent DB writes many simultaneous
+            # forks produced tonight, the ORIGINAL exception was a real
+            # "database is locked" from db.insert_task() -- and this
+            # fallback error-logging call hit the SAME lock and raised
+            # a second, uncaught exception, which crashed this whole
+            # request thread before any response was ever sent (curl
+            # saw "empty reply from server", not a clean 500). Logging
+            # the error must never be able to prevent the client from
+            # getting a real response, regardless of why the original
+            # call failed.
             import traceback as tb_mod
-            with db.get_conn() as conn:
-                db.log_error(conn, "api", parsed.path, str(e), tb_mod.format_exc())
+            try:
+                with db.get_conn() as conn:
+                    db.log_error(conn, "api", parsed.path, str(e), tb_mod.format_exc())
+            except Exception:
+                pass
             self._send(500, {"error": str(e)})
 
     def _send(self, status, payload):
@@ -561,9 +713,46 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def serve(port: int = 8787):
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    print(f"Shakthi API listening on http://127.0.0.1:{port}  (routes: {', '.join(sorted(ROUTES))})")
+WEBSITE_HEALTH_CHECK_INTERVAL_SECONDS = 300  # 5 minutes -- real scheduled local checks
+
+
+def _website_health_scheduler_loop():
+    while True:
+        try:
+            website_health.check_all_watched_sites()
+        except Exception as e:
+            # A scheduler-thread crash must never take the whole API down --
+            # log it via the same error table every other real failure uses.
+            with db.get_conn() as conn:
+                db.log_error(conn, "website_health_scheduler", "background_check", str(e), "")
+        time.sleep(WEBSITE_HEALTH_CHECK_INTERVAL_SECONDS)
+
+
+def serve(port: int = None, host: str = None):
+    # Env-configurable host/port for LAN/mobile access (Task 13) --
+    # SHAKTHI_API_HOST defaults to loopback-only, same as always. Binding
+    # to a real LAN-reachable host without a token configured would make
+    # the whole system (25 real agents, real financial/task data) reachable
+    # by anyone on the WiFi with zero auth -- refuse and fall back to
+    # loopback rather than silently doing that.
+    port = port or int(os.environ.get("SHAKTHI_API_PORT", "8787"))
+    host = host or os.environ.get("SHAKTHI_API_HOST", "127.0.0.1")
+    if host not in ("127.0.0.1", "localhost") and not API_TOKEN:
+        print(f"REFUSING to bind {host} without SHAKTHI_API_TOKEN set -- falling back to 127.0.0.1.")
+        print("Set SHAKTHI_API_TOKEN to a real secret to enable LAN/mobile access.")
+        host = "127.0.0.1"
+
+    server = ThreadingHTTPServer((host, port), Handler)
+    scheduler = threading.Thread(target=_website_health_scheduler_loop, daemon=True)
+    scheduler.start()
+    print(f"Shakthi API listening on http://{host}:{port}  (routes: {', '.join(sorted(ROUTES))})")
+    if host not in ("127.0.0.1", "localhost"):
+        lan_ip = _real_lan_ip()
+        if lan_ip:
+            print(f"LAN/mobile URL: http://{lan_ip}:{port}  (token required for non-loopback requests)")
+        else:
+            print("Bound to a non-loopback host but could not determine a real LAN IP -- check your network interface.")
+    print(f"Website Health Watcher: background checks every {WEBSITE_HEALTH_CHECK_INTERVAL_SECONDS}s")
     server.serve_forever()
 
 

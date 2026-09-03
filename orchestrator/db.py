@@ -393,6 +393,20 @@ def task_status_counts(conn):
     return {r["status"]: r["c"] for r in rows}
 
 
+def recent_task_events(conn, limit: int = 50):
+    """Real event stream for the Founder Command Center logs panel --
+    joins task_events with its parent task so each log line carries real
+    agent/goal context, not just a bare event_type."""
+    rows = conn.execute(
+        """SELECT e.id, e.task_id, e.event_type, e.payload, e.created_at,
+                  t.agent_id, t.goal, t.status AS task_status, t.risk_level
+           FROM task_events e JOIN tasks t ON t.id = e.task_id
+           ORDER BY e.id DESC LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def list_all_memory(conn, layer: str = None, limit: int = 100):
     if layer:
         rows = conn.execute(
@@ -1764,5 +1778,98 @@ def insert_journal_entry(conn, position_id: int, strategy_id: int, symbol: str, 
 def list_journal(conn, limit: int = 100) -> list:
     rows = conn.execute(
         "SELECT * FROM trading_journal ORDER BY id DESC LIMIT ?", (limit,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --- Website Health Watcher ---------------------------------------------
+
+def list_watched_websites(conn, active_only: bool = True) -> list:
+    query = "SELECT * FROM watched_websites"
+    if active_only:
+        query += " WHERE active = 1"
+    query += " ORDER BY id ASC"
+    return [dict(r) for r in conn.execute(query).fetchall()]
+
+
+def insert_watched_website(conn, url: str, label: str, alert_response_ms_threshold: int = 3000) -> int:
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO watched_websites (url, label, alert_response_ms_threshold) VALUES (?, ?, ?)",
+        (url, label, alert_response_ms_threshold),
+    )
+    return cur.lastrowid
+
+
+def insert_health_check(conn, website_id: int, status: str, status_code: int = None,
+                         response_time_ms: int = None, ssl_expires_at: str = None,
+                         ssl_days_remaining: int = None, error_detail: str = None) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO website_health_checks
+            (website_id, status, status_code, response_time_ms, ssl_expires_at, ssl_days_remaining, error_detail)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (website_id, status, status_code, response_time_ms, ssl_expires_at, ssl_days_remaining, error_detail),
+    )
+    return cur.lastrowid
+
+
+def previous_health_check(conn, website_id: int, before_check_id: int = None):
+    """Most recent check for this site, excluding a given check id (used right
+    after inserting the new one, to compare against what came before it)."""
+    if before_check_id is not None:
+        row = conn.execute(
+            "SELECT * FROM website_health_checks WHERE website_id = ? AND id < ? ORDER BY id DESC LIMIT 1",
+            (website_id, before_check_id),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT * FROM website_health_checks WHERE website_id = ? ORDER BY id DESC LIMIT 1",
+            (website_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def latest_health_check(conn, website_id: int):
+    row = conn.execute(
+        "SELECT * FROM website_health_checks WHERE website_id = ? ORDER BY id DESC LIMIT 1", (website_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def history_health_checks(conn, website_id: int, limit: int = 50) -> list:
+    rows = conn.execute(
+        "SELECT * FROM website_health_checks WHERE website_id = ? ORDER BY id DESC LIMIT ?",
+        (website_id, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def open_incident(conn, website_id: int) -> int:
+    row = conn.execute(
+        "SELECT id FROM website_incidents WHERE website_id = ? AND status = 'open' LIMIT 1", (website_id,)
+    ).fetchone()
+    if row:
+        return row["id"]
+    cur = conn.execute(
+        "INSERT INTO website_incidents (website_id, status, summary) VALUES (?, 'open', 'Site went offline')",
+        (website_id,),
+    )
+    return cur.lastrowid
+
+
+def close_open_incident(conn, website_id: int, summary: str) -> None:
+    conn.execute(
+        """
+        UPDATE website_incidents SET status = 'closed', closed_at = CURRENT_TIMESTAMP, summary = ?
+        WHERE website_id = ? AND status = 'open'
+        """,
+        (summary, website_id),
+    )
+
+
+def list_incidents(conn, limit: int = 50) -> list:
+    rows = conn.execute(
+        "SELECT * FROM website_incidents ORDER BY opened_at DESC LIMIT ?", (limit,)
     ).fetchall()
     return [dict(r) for r in rows]

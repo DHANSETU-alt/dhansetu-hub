@@ -49,11 +49,15 @@ def _db_ok() -> bool:
 
 
 def _cpu_temp_c():
-    """Real attempt, not hardcoded None -- if this ever runs somewhere
-    with passwordless sudo configured for powermetrics, it'll work.
-    Confirmed unavailable (permission denied) on this machine."""
+    """Real attempt, not hardcoded None. powermetrics needs root to read
+    SMC sensors -- `sudo -n` (non-interactive) so a cron-run Sentinel
+    check fails fast instead of hanging on a password prompt that will
+    never come. Requires a real NOPASSWD sudoers rule scoped to exactly
+    this command (see BACKUP_ARCHITECTURE.md-adjacent setup notes / ask
+    Claude for the exact line) -- without it, this still returns None,
+    same honest behavior as before."""
     try:
-        proc = subprocess.run(["powermetrics", "--samplers", "smc", "-n1", "-i1"],
+        proc = subprocess.run(["sudo", "-n", "/usr/bin/powermetrics", "--samplers", "smc", "-n1", "-i1"],
                                capture_output=True, text=True, timeout=5)
         if proc.returncode != 0:
             return None

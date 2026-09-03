@@ -13,6 +13,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: "Overview",
     items: [
       { href: "/", label: "Executive Dashboard" },
+      { href: "/command-center", label: "Founder Command Center" },
       { href: "/initiatives", label: "Founder Tasks" },
       { href: "/mission-control", label: "Mission Control" },
     ],
@@ -27,6 +28,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { href: "/bugs", label: "Bug Dashboard" },
       { href: "/ert", label: "ERT Command Center" },
       { href: "/audits", label: "Audit History" },
+      { href: "/control-plane-31", label: "Control Plane 3.1" },
       { href: "/correction", label: "Correction Bot" },
       { href: "/failure-analyses", label: "Failure Analysis Engine" },
       { href: "/chrome-developer", label: "Chrome Developer" },
@@ -57,6 +59,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { href: "/businesses", label: "Workspace Manager", soon: true },
       { href: "/website-builder", label: "Website Builder" },
       { href: "/websites", label: "Website Monitoring" },
+      { href: "/website-health", label: "Website Health Watcher" },
       { href: "/client-success", label: "Client Success" },
       { href: "/pdf-studio", label: "Dhansetu PDF Studio", soon: true },
       { href: "/peopledesk", label: "Dhansetu PeopleDesk", soon: true },

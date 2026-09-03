@@ -16,6 +16,29 @@ CRITICAL_KEYWORDS = (
     "lawsuit", "production database", "delete all", "credentials", "secret key",
 )
 
+# Real 4-tier classification, added for the Founder Command Center's
+# priority display (Task 13). CRITICAL_KEYWORDS and the "critical" value
+# are completely unchanged -- the cloud-escalation gate in run_task()
+# below still checks `risk == "critical"` exactly as before, so this
+# extension cannot change which tasks escalate to cloud. HIGH/LOW are
+# purely additive classification bands for goals that don't hit a
+# critical keyword; deterministic keyword matching only, same reasoning
+# as CRITICAL_KEYWORDS itself (a 3B local model's risk judgment isn't a
+# reliable gate for this).
+
+# Multi-word phrases, not bare single words -- a real test
+# (test_founder_examples_are_not_critical) already encodes that generic
+# verbs like "check"/"review"/"security" appear constantly in normal
+# read-only status commands ("security audit start karo" must stay
+# "normal", not get pulled into "high" just because it contains
+# "security"). Same style CRITICAL_KEYWORDS already uses for exactly
+# this reason -- specific phrases, not words common enough to false-positive.
+HIGH_KEYWORDS = (
+    "deploy to production", "go live", "launch campaign", "security incident",
+    "customer data breach", "site outage", "publish live", "production outage",
+)
+LOW_KEYWORDS = ("just a draft", "rough idea", "quick brainstorm", "just exploring")
+
 # Agents whose whole job is faithful, real-time handling of the exact
 # message they're given -- injecting unrelated "Relevant memory" context
 # does these agents active harm, not just no benefit. Found live: asked to
@@ -65,6 +88,10 @@ def classify_risk(goal: str) -> str:
     lowered = goal.lower()
     if any(kw in lowered for kw in CRITICAL_KEYWORDS):
         return "critical"
+    if any(kw in lowered for kw in HIGH_KEYWORDS):
+        return "high"
+    if any(kw in lowered for kw in LOW_KEYWORDS):
+        return "low"
     return "normal"
 
 

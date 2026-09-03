@@ -2,8 +2,14 @@ const API_BASE = process.env.API_BASE || process.env.NEXT_PUBLIC_API_BASE || "ht
 
 export class ApiError extends Error {}
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
+// Optional extra headers -- used only by the Founder Command Center's
+// LAN/mobile token gate (Task 13). Every other caller in this file omits
+// this param, so this is a zero-risk additive change: loopback-only
+// requests (every server-rendered page, every existing call site) never
+// need a token per the API's own trust model, only a real non-loopback
+// request does.
+export async function apiGet<T>(path: string, extraHeaders?: Record<string, string>): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, { cache: "no-store", headers: extraHeaders });
   if (!res.ok) {
     const body = await res.text();
     throw new ApiError(`API ${path} returned ${res.status}: ${body}`);
@@ -149,7 +155,7 @@ export type InitiativeMilestone = {
 };
 export type Initiative = {
   id: number;
-  track: "task" | "project";
+  track: "task" | "project" | "os";
   seq: number;
   title: string;
   artifact_url: string | null;
@@ -617,7 +623,52 @@ export type FullTask = {
   result: string | null;
   created_at: string;
 };
-export const getTasks = (status?: string) => apiGet<{ tasks: FullTask[]; counts: Record<string, number> }>(`/api/tasks${status ? `?status=${status}` : ""}`);
+export const getTasks = (status?: string, token?: string) =>
+  apiGet<{ tasks: FullTask[]; counts: Record<string, number> }>(
+    `/api/tasks${status ? `?status=${status}` : ""}`,
+    tokenHeaders(token)
+  );
+
+export type CeoDecision = {
+  decision_id: number;
+  status: string;
+  priority_score: number | null;
+  risk_score: number | null;
+  business_impact_score: number | null;
+  reason: string;
+  task_id: number;
+};
+export type CommandCenterResult = {
+  raw_message: string;
+  refined_prompt: string;
+  pa_task_id: number;
+  ceo_decision: CeoDecision;
+  error?: string;
+};
+// Founder Command Center LAN/mobile token (Task 13) -- the API only
+// enforces this for non-loopback requests (see orchestrator/api.py); a
+// desktop session hitting 127.0.0.1 never needs it, so `token` is always
+// optional here and simply omitted from headers when not set.
+function tokenHeaders(token?: string): Record<string, string> | undefined {
+  return token ? { "X-Shakthi-Token": token } : undefined;
+}
+
+export const submitFounderCommand = (text: string, token?: string) =>
+  apiGet<CommandCenterResult>(`/api/command-center/submit?text=${encodeURIComponent(text)}`, tokenHeaders(token));
+
+export type TaskLogEvent = {
+  id: number;
+  task_id: number;
+  event_type: string;
+  payload: string | null;
+  created_at: string;
+  agent_id: string;
+  goal: string;
+  task_status: string;
+  risk_level: string;
+};
+export const getCommandCenterLogs = (limit = 50, token?: string) =>
+  apiGet<{ events: TaskLogEvent[] }>(`/api/command-center/logs?limit=${limit}`, tokenHeaders(token));
 
 export type MemoryEntry = {
   id: number;
@@ -647,3 +698,126 @@ export type WebsiteProject = {
 };
 export const getWebsiteProjects = (status?: string) =>
   apiGet<{ projects: WebsiteProject[]; templates: string[] }>(`/api/website-projects${status ? `?status=${status}` : ""}`);
+
+// --- SHAKTHI_OS 3.1 control plane (shakthi/ package, read-only) ---
+
+export type V31Confidence = {
+  decision: number;
+  evidence: number;
+  security: number;
+  execution: number;
+  business: number;
+  overall: number;
+  required_action: string;
+};
+
+export type V31Mission = {
+  mission_id: string;
+  objective: string;
+  business_impact: string;
+  priority: string;
+  project: string;
+  department: string;
+  agents: string[];
+  budget: Record<string, number | string>;
+  estimated_compute_cost: Record<string, number | string>;
+  dependencies: string[];
+  risk: string;
+  security_classification: string;
+  autonomy_level: string;
+  rollback_plan: string;
+  testing_requirements: string[];
+  success_criteria: string[];
+  confidence: V31Confidence;
+  current_status: string;
+  created_at: string;
+};
+export const getV31Missions = () => apiGet<{ missions: V31Mission[] }>("/api/v31/missions");
+
+export type V31Entity = {
+  id: string;
+  type: string;
+  name: string;
+  attributes: Record<string, unknown>;
+  updated_at: string;
+};
+export const getV31WorldModel = () => apiGet<{ entities: V31Entity[] }>("/api/v31/world-model");
+
+export type V31AuditEntry = {
+  timestamp: string;
+  agent: string;
+  mission_id: string;
+  action: string;
+  reason: string;
+  tools: string[];
+  files_changed: string[];
+  approval: string | null;
+  result: string;
+  rollback_reference: string | null;
+  previous_hash: string;
+  hash: string;
+};
+export const getV31Audit = () => apiGet<{ chain_valid: boolean; entries: V31AuditEntry[] }>("/api/v31/audit");
+
+export type V31Event = {
+  event_id: string;
+  timestamp: string;
+  mission_id: string;
+  task_id: string | null;
+  source_agent: string;
+  target_agent: string;
+  action: string;
+  status: string;
+  severity: string;
+  subsystem: string;
+  latency_ms: number | null;
+  message: string;
+  repo: string;
+  data_source: string;
+};
+export const getV31Events = (limit = 100) => apiGet<{ events: V31Event[] }>(`/api/v31/events?limit=${limit}`);
+
+export type V31Governance = {
+  autonomy_levels: { name: string; value: number }[];
+  truth_states: string[];
+};
+export const getV31Governance = () => apiGet<V31Governance>("/api/v31/governance");
+
+export type WebsiteHealthCheck = {
+  id: number;
+  website_id: number;
+  checked_at: string;
+  status: "online" | "offline" | "error";
+  status_code: number | null;
+  response_time_ms: number | null;
+  ssl_expires_at: string | null;
+  ssl_days_remaining: number | null;
+  error_detail: string | null;
+};
+export type WatchedWebsite = {
+  id: number;
+  url: string;
+  label: string;
+  alert_response_ms_threshold: number;
+  active: number;
+  created_at: string;
+  latest_check: WebsiteHealthCheck | null;
+  in_alert: boolean;
+};
+export type WebsiteIncident = {
+  id: number;
+  website_id: number;
+  opened_at: string;
+  closed_at: string | null;
+  status: "open" | "closed";
+  summary: string;
+  website_label: string;
+  website_url: string | null;
+};
+
+export const getWebsiteHealthLatest = () => apiGet<{ sites: WatchedWebsite[] }>("/api/website-health/latest");
+export const refreshWebsiteHealth = () => apiGet<{ sites: WatchedWebsite[] }>("/api/website-health/refresh");
+export const getWebsiteHealthIncidents = (limit = 50) =>
+  apiGet<{ incidents: WebsiteIncident[] }>(`/api/website-health/incidents?limit=${limit}`);
+export const getWebsiteHealthHistory = (websiteId: number, limit = 50) =>
+  apiGet<{ checks: WebsiteHealthCheck[] }>(`/api/website-health/history?website_id=${websiteId}&limit=${limit}`);

@@ -298,6 +298,49 @@ def _cmd_audit_run(deepen_top_n):
     print(f"\nExecutive summary:\n{result['executive_summary']}")
 
 
+def _cmd_website_health_check():
+    from . import website_health
+    results = website_health.check_all_watched_sites()
+    for r in results:
+        lc = r["latest_check"]
+        flag = "ALERT" if r["in_alert"] else "ok"
+        ssl_part = f"  SSL: {lc['ssl_days_remaining']}d" if lc["ssl_days_remaining"] is not None else ""
+        print(f"[{flag:5s}] {r['label']:40s} {lc['status']:8s} "
+              f"code={lc['status_code']}  {lc['response_time_ms']}ms{ssl_part}")
+        if lc["error_detail"]:
+            print(f"         {lc['error_detail']}")
+
+
+def _cmd_local_backup_create(reason):
+    from . import backup_manager
+    result = backup_manager.create_local_backup(reason)
+    print(f"Status: {result['status']}" + (f"  -> {result['generation']}" if result.get("generation") else ""))
+    print(f"  tests passed: {result['tests']['passed']}   build passed: {result['build']['passed']}")
+    print(f"  db readable: {result['database'].get('readable')}   app launches: {result['app_launch'].get('launches')}")
+    print(f"  security gate clean: {result['security_gate']['clean']}")
+    print(f"  tarball: {result['tarball']['filename']}  ({result['tarball']['size_bytes']} bytes)  sha256={result['tarball']['sha256'][:16]}...")
+
+
+def _cmd_local_backup_list():
+    from . import backup_manager
+    result = backup_manager.list_local_generations()
+    for g in result["generations"]:
+        if g.get("status") == "empty":
+            print(f"{g['generation']}: empty")
+        else:
+            print(f"{g['generation']}: {g['status']}  {g['timestamp']}  reason={g['reason']!r}")
+    if result["unverified_snapshots"]:
+        print(f"Unverified snapshots: {len(result['unverified_snapshots'])}")
+        for u in result["unverified_snapshots"]:
+            print(f"  {u['timestamp']}  reason={u['reason']!r}")
+
+
+def _cmd_local_backup_verify(gen):
+    from . import backup_manager
+    result = backup_manager.verify_generation(gen)
+    print(json.dumps(result, indent=2))
+
+
 def _cmd_sentinel_check():
     h = sentinel.collect_health()
     print(f"Health: {h['health_score']}/100   Performance: {h['performance_score']}/100")
@@ -1192,11 +1235,19 @@ def main():
     parser.add_argument("--audit-run", action="store_true", help="Full codebase audit: CEO -> Security -> Bug Fixer -> Engineer -> CEO")
     parser.add_argument("--deepen", type=int, default=3, help="How many top findings to run through the full bug pipeline")
 
+    parser.add_argument("--local-backup-create", metavar="REASON", default=None,
+                         help="Run real known-good checks (tests/build/db/security) and create a rotated local backup generation (or an UNVERIFIED_SNAPSHOT if checks fail)")
+    parser.add_argument("--local-backup-list", action="store_true", help="List real local backup generations (G1/G2/G3) and any unverified snapshots")
+    parser.add_argument("--local-backup-verify", metavar="GEN", default=None, help="Real restore drill against a stored generation, e.g. G1")
+
     parser.add_argument("--sentinel-check", action="store_true", help="Collect and print a real system health snapshot")
     parser.add_argument("--sentinel-forecast", metavar="METRIC", default=None,
                          help="Real linear-trend projection for a system_health column (e.g. disk_percent) from actual stored history")
     parser.add_argument("--forecast-threshold", type=float, default=90.0, help="Threshold value for --sentinel-forecast (default 90.0)")
     parser.add_argument("--sentinel-loop", action="store_true", help="Continuous monitoring (foreground loop, Ctrl+C to stop)")
+
+    parser.add_argument("--website-health-check", action="store_true",
+                         help="Run a real check (HTTP + SSL) against every active watched website and print the results")
     parser.add_argument("--payment-certify", metavar="PRODUCT", default=None,
                          help="Real PRODUCTION READY/NOT verdict for a payment integration -- see --certify-provider/--certify-env/--certify-signals")
     parser.add_argument("--certify-provider", default="PayU")
@@ -1366,7 +1417,7 @@ def main():
     parser.add_argument("--interval", type=int, default=60, help="Seconds between --sentinel-loop collections")
 
     parser.add_argument("--initiative-add", metavar="TITLE", help="Track a new founder-facing task (Task 1, Task 2, ...)")
-    parser.add_argument("--initiative-track", default="task", choices=["task", "project"],
+    parser.add_argument("--initiative-track", default="task", choices=["task", "project", "os"],
                          help="'task' = web-based work (default), 'project' = big cross-platform software dev (Mac/Windows/Linux/iOS/Android)")
     parser.add_argument("--initiative-artifact-url", default=None, metavar="URL")
     parser.add_argument("--milestone-add", type=int, default=None, metavar="INITIATIVE_ID")
@@ -1546,6 +1597,14 @@ def _dispatch(args):
         return _cmd_patches(args.patch_bug)
     if args.audit_run:
         return _cmd_audit_run(args.deepen)
+    if args.website_health_check:
+        return _cmd_website_health_check()
+    if args.local_backup_create is not None:
+        return _cmd_local_backup_create(args.local_backup_create)
+    if args.local_backup_list:
+        return _cmd_local_backup_list()
+    if args.local_backup_verify is not None:
+        return _cmd_local_backup_verify(args.local_backup_verify)
     if args.sentinel_check:
         return _cmd_sentinel_check()
     if args.sentinel_forecast:

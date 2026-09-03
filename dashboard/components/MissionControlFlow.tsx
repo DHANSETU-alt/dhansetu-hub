@@ -72,10 +72,28 @@ const ACTIVITY_STATUS_TONE: Record<string, string> = {
   done: "#34d399", running: "#22d3ee", pending: "#94a3b8", failed: "#fb7185",
 };
 
+// Real spinning-strand motion for DNA-helix members: a full circular orbit
+// path sampled into keyframes (framer-motion animates a straight tween
+// between each pair, so enough steps are needed for it to read as a smooth
+// circle, not a polygon). `phase0` staggers strand A vs strand B 180 deg
+// apart so a rung's two nodes visibly orbit as a rotating pair.
+const ORBIT_STEPS = 13;
+function orbitKeyframes(radius: number, phase0: number) {
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (let i = 0; i < ORBIT_STEPS; i++) {
+    const a = phase0 + (i / (ORBIT_STEPS - 1)) * Math.PI * 2;
+    xs.push(radius * Math.cos(a));
+    ys.push(radius * Math.sin(a));
+  }
+  return { xs, ys };
+}
+
 // --- Custom node: a glowing glass orb, pulses when recently active ---
 function OrbNode({ data }: NodeProps) {
   const d = data as unknown as {
     label: string; sublabel: string; color: string; size: "xl" | "lg" | "md" | "sm" | "xs"; active: boolean; face?: string;
+    orbitRadius?: number; orbitPhase0?: number;
   };
   const glow = GLOW[d.color] || GLOW.slate;
   // "xs" is for larger rosters (see ORB_SIZE_TIERS in MissionControlFlow
@@ -98,6 +116,12 @@ function OrbNode({ data }: NodeProps) {
   const floatAmp = 4 + (seed % 4); // 4px - 7px vertical
   const swayAmp = 2 + (seed % 3); // 2px - 4px horizontal
 
+  // DNA-helix members carry real orbit data instead -- a continuous
+  // circular path around their own fixed anchor point, replacing the
+  // float/sway wobble with a real visible spin.
+  const hasOrbit = typeof d.orbitRadius === "number";
+  const orbit = hasOrbit ? orbitKeyframes(d.orbitRadius as number, d.orbitPhase0 ?? 0) : null;
+
   return (
     <motion.div
       initial={{ scale: 0.85, opacity: 0 }}
@@ -110,8 +134,8 @@ function OrbNode({ data }: NodeProps) {
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
       <motion.div
         className="absolute inset-0"
-        animate={{ y: [0, -floatAmp, 0, floatAmp * 0.5, 0], x: [0, swayAmp, 0, -swayAmp * 0.6, 0] }}
-        transition={{ duration: floatDuration, delay: floatDelay, repeat: Infinity, ease: "easeInOut" }}
+        animate={hasOrbit ? { x: orbit!.xs, y: orbit!.ys } : { y: [0, -floatAmp, 0, floatAmp * 0.5, 0], x: [0, swayAmp, 0, -swayAmp * 0.6, 0] }}
+        transition={hasOrbit ? { duration: 7, repeat: Infinity, ease: "linear" } : { duration: floatDuration, delay: floatDelay, repeat: Infinity, ease: "easeInOut" }}
       >
         {/* Outer soft halo -- a second, wider glow layer behind everything,
             always on (not just when active) so idle nodes still read as neon,
@@ -189,10 +213,16 @@ function SquadLabelNode({ data }: NodeProps) {
 // hub -> agent. Two different questions, both real: who's working, and
 // which way the work is moving. ---
 function FlowEdge({ sourceX, sourceY, targetX, targetY, data }: EdgeProps) {
-  const d = data as unknown as { color: string; active: boolean } | undefined;
+  const d = data as unknown as { color: string; active: boolean; chaseOffset?: number } | undefined;
   const glow = GLOW[d?.color || "slate"] || GLOW.slate;
   const [path] = getStraightPath({ sourceX, sourceY, targetX, targetY });
   const motionPath = `M${sourceX},${sourceY} L${targetX},${targetY}`;
+  // Ferris-wheel rim edges pass a chaseOffset (0-1, this edge's position
+  // around the ring) so each segment's traveling dot starts later than the
+  // last -- the same two dots-per-edge timing, just phase-shifted per rim
+  // segment, so light visibly chases all the way around the wheel instead
+  // of every spoke pulsing in lockstep.
+  const chase = d?.chaseOffset ?? 0;
 
   return (
     <>
@@ -214,7 +244,7 @@ function FlowEdge({ sourceX, sourceY, targetX, targetY, data }: EdgeProps) {
             <circle key={offset} r="7.5" fill={glow} style={{ filter: `drop-shadow(0 0 12px ${glow})` }}>
               <animateMotion
                 dur="1.6s"
-                begin={`${offset * 1.6}s`}
+                begin={`${((offset + chase) % 1) * 1.6}s`}
                 repeatCount="indefinite"
                 path={motionPath}
                 keyPoints="0;1"
@@ -233,9 +263,11 @@ function FlowEdge({ sourceX, sourceY, targetX, targetY, data }: EdgeProps) {
 // absolutely-positioned div over the container) so it pans/zooms/fits in
 // lockstep with the rest of the graph instead of drifting independently of it. ---
 function RadarNode({ data }: NodeProps) {
-  const d = data as unknown as { size: number };
+  const d = data as unknown as { size: number; width?: number; height?: number };
+  const w = d.width ?? d.size;
+  const h = d.height ?? d.size;
   return (
-    <div style={{ width: d.size, height: d.size, pointerEvents: "none", position: "relative" }}>
+    <div style={{ width: w, height: h, pointerEvents: "none", position: "relative" }}>
       <div
         className="absolute inset-0 rounded-full"
         style={{
@@ -305,14 +337,14 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
       ...[...bySquad.keys()].filter((s) => !SQUAD_ORDER.includes(s)),
     ];
 
-    // Radial hub-and-spoke layout: Founder/Angella/CEO/Manager stack at
-    // the true center, real squads arranged as clusters radiating around
-    // it at even angles (Executive Neural Network reference, 2026-09-01),
-    // each squad's own members arranged in a small arc around their
-    // cluster's own angular position. Gaps still scale off orb size, not
-    // fixed pixels -- fitView rescales the whole diagram, so only a
-    // ratio-to-orb-size survives that rescale, same lesson as the earlier
-    // rectangular layout.
+    // Radial hub-and-spoke layout, restored to the original design
+    // (founder correction, 2026-09-03: "Mission Control's only and only
+    // agents [should be in the] animated rotating DNA type... remaining
+    // don't change single thing"). Hub stack, worker-pool ring, squad
+    // label positions and radar backdrop are all back to exactly how the
+    // pre-helix version computed them -- ONLY the individual squad-member
+    // agents get the DNA treatment, as a small rotating double helix
+    // radiating outward along each squad's own spoke.
     const N = Math.max(leafAgents.length, 1);
     const leafSize: "sm" | "xs" = N > 24 ? "xs" : "sm";
     const leafOrbPx = leafSize === "xs" ? 66 : 78;
@@ -327,14 +359,13 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
     // with squad count so more squads don't overlap each other.
     const CLUSTER_RADIUS = leafOrbPx * (3.4 + numSquads * 0.35);
     // Member ring: how far a squad's own agents sit from THEIR squad's
-    // angular position, arranged as a small arc facing outward.
+    // angular position (also anchors the helix's outward extent below).
     const MEMBER_RADIUS = leafOrbPx * 1.9;
 
     const angleStep = (2 * Math.PI) / numSquads;
     // Offset by half a step so squads land diagonally (NE/SE/SW/NW for 4
     // squads), never straight up (collides with the fixed header overlay)
-    // or straight down (collides with the hub stack's own vertical line,
-    // which is what put "Get Shit Done" right on top of Duke before).
+    // or straight down (collides with the hub stack's own vertical line).
     const startAngle = -Math.PI / 2 + angleStep / 2;
 
     const hubStack: { id: string; label: string; face?: string; sublabel: string; color: string; size: "xl" | "lg" | "md"; active: boolean }[] = [
@@ -363,6 +394,22 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
       hubId = n.id;
     });
 
+    // Per-squad Ferris wheel: a small always-lit axle node at the squad's
+    // cluster center, members evenly spaced around a rim circle -- spoke
+    // edges (axle -> member) plus rim edges (member -> next member,
+    // closing the loop) so it reads as an actual wheel, not just agents in
+    // a circle. Real motion comes from two safe, proven techniques: each
+    // gondola gets a small continuous spin-in-place via the same
+    // orbitKeyframes/OrbNode mechanism the DNA helix used (node.position
+    // stays fully static -- recomputing position via a timer was tried
+    // earlier and broke ReactFlow's internal visibility tracking), and the
+    // neon flow's traveling dot chases all the way around the rim loop
+    // (each rim edge's dot phase-shifted by its position around the ring
+    // via `chaseOffset`, consumed in FlowEdge) so light visibly flows
+    // around the wheel continuously -- the real "merry-go-round" read.
+    const WHEEL_RADIUS_LOCAL = MEMBER_RADIUS;
+    const GONDOLA_SPIN_RADIUS = leafOrbPx * 0.28;
+
     squadKeys.forEach((squad, si) => {
       const members = bySquad.get(squad)!;
       const angle = startAngle + si * angleStep;
@@ -373,25 +420,40 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
         id: `label-${squad}`, type: "label", position: { x: clusterX - 110, y: clusterY - leafOrbPx * 1.5 },
         draggable: false, selectable: false, data: { label: squad },
       });
-      edges.push({ id: `e-${hubId}-cluster-${squad}`, source: hubId, target: members[0]?.id ?? `label-${squad}`, type: "flow", data: { color: members[0]?.color ?? "slate", active: members.some((m) => m.active) } });
 
-      // Members fan out in a small arc around their own cluster position,
-      // facing outward (away from the hub) -- a real mini fan, not a
-      // straight line, so a squad of 6-8 agents still reads as one
-      // cluster instead of a spoke.
-      const arcSpan = Math.min(angleStep * 0.9, Math.PI / 2.2);
+      // Axle: the wheel's true center. Unlabeled, small, always lit -- the
+      // hub chain connects here, and every spoke/rim edge anchors off it.
+      const axleId = `axle-${squad}`;
+      const squadActive = members.some((m) => m.active);
+      const squadColor = members[0]?.color ?? "slate";
+      nodes.push({
+        id: axleId, type: "orb", position: { x: clusterX, y: clusterY }, draggable: false,
+        data: { label: "", sublabel: "", color: squadColor, size: "xs", active: squadActive },
+      });
+      edges.push({ id: `e-${hubId}-axle-${squad}`, source: hubId, target: axleId, type: "flow", data: { color: squadColor, active: squadActive } });
+
+      const memberAngleStep = (2 * Math.PI) / Math.max(members.length, 1);
       members.forEach((m, mi) => {
-        const memberAngle = angle - arcSpan / 2 + (members.length > 1 ? (arcSpan * mi) / (members.length - 1) : arcSpan / 2);
-        const mx = clusterX + MEMBER_RADIUS * Math.cos(memberAngle);
-        const my = clusterY + MEMBER_RADIUS * Math.sin(memberAngle);
+        const memberAngle = -Math.PI / 2 + mi * memberAngleStep; // first gondola at 12 o'clock, like a real wheel
+        const mx = clusterX + WHEEL_RADIUS_LOCAL * Math.cos(memberAngle);
+        const my = clusterY + WHEEL_RADIUS_LOCAL * Math.sin(memberAngle);
         nodes.push({
           id: m.id, type: "orb", position: { x: mx, y: my }, draggable: false,
-          data: { label: label(m), face: face(m), sublabel: m.sublabel, color: m.color, size: leafSize, active: m.active },
+          data: { label: label(m), face: face(m), sublabel: m.sublabel, color: m.color, size: leafSize, active: m.active, orbitRadius: GONDOLA_SPIN_RADIUS, orbitPhase0: memberAngle },
         });
-        if (mi > 0) {
-          edges.push({ id: `e-${members[0].id}-${m.id}`, source: members[0].id, target: m.id, type: "flow", data: { color: m.color, active: m.active } });
-        } else {
-          edges.push({ id: `e-${hubId}-${m.id}`, source: hubId, target: m.id, type: "flow", data: { color: m.color, active: m.active } });
+        // Spoke: axle -> this gondola. Real active-state signal lives here.
+        edges.push({ id: `spoke-${squad}-${m.id}`, source: axleId, target: m.id, type: "flow", data: { color: m.color, active: m.active } });
+        // Rim: this gondola -> the next one around the wheel, wrapping to
+        // the first -- always "active" (it's the wheel's own structure
+        // lighting up, not an individual agent's task state), phase-offset
+        // by position around the ring so the chase reads as one continuous
+        // loop of light.
+        if (members.length > 1) {
+          const next = members[(mi + 1) % members.length];
+          edges.push({
+            id: `rim-${squad}-${m.id}-${next.id}`, source: m.id, target: next.id,
+            type: "flow", data: { color: m.color, active: true, chaseOffset: mi / members.length },
+          });
         }
       });
     });

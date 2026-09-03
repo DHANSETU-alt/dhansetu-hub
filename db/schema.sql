@@ -896,3 +896,44 @@ CREATE TABLE IF NOT EXISTS trading_journal (
   reason TEXT NOT NULL,                    -- what triggered this, e.g. "SMA10 crossed above SMA30"
   executed_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- BlackboxOps OS Website Health Watcher -- real uptime/SSL monitoring,
+-- separate from `sites` (local file presence) and `website_reviews`
+-- (one-off SEO/UI audits). alert_response_ms_threshold is per-site since
+-- an internal workers.dev URL and a public marketing site have different
+-- reasonable latency expectations.
+CREATE TABLE IF NOT EXISTS watched_websites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  url TEXT NOT NULL UNIQUE,
+  label TEXT NOT NULL,
+  alert_response_ms_threshold INTEGER NOT NULL DEFAULT 3000,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- One row per real check. status is the ground truth; ssl_* fields are
+-- null (not a fabricated value) whenever the handshake fails or the site
+-- is plain HTTP -- see website_health.py's real TLS-handshake reasoning.
+CREATE TABLE IF NOT EXISTS website_health_checks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  website_id INTEGER NOT NULL REFERENCES watched_websites(id),
+  checked_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  status TEXT NOT NULL,                    -- online | offline | error
+  status_code INTEGER,
+  response_time_ms INTEGER,
+  ssl_expires_at TEXT,
+  ssl_days_remaining INTEGER,
+  error_detail TEXT
+);
+
+-- Real transition log, not a copy of every check -- a row opens when a
+-- site flips online->offline and closes when it flips back, per
+-- website_health.py's transition logic.
+CREATE TABLE IF NOT EXISTS website_incidents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  website_id INTEGER NOT NULL REFERENCES watched_websites(id),
+  opened_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  closed_at TEXT,
+  status TEXT NOT NULL DEFAULT 'open',     -- open | closed
+  summary TEXT
+);
