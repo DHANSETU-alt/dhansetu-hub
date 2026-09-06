@@ -16,14 +16,20 @@ for the API layer; this doesn't need one yet.
 """
 import json
 import os
+import platform
+import shutil
 import socket
+import subprocess
 import threading
 import time
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 from . import ceo as ceo_mod
-from . import config, db, finance, initiatives, pa_angella, security, sentinel, website_health
+from . import config, db, finance, initiatives, pa_angella, security, sentinel, voice, website_health
+
+import psutil
 
 ROUTES = {}
 
@@ -392,6 +398,28 @@ def voice_recent(qs):
         return {"commands": db.recent_voice_commands(conn, limit=_qs_int(qs, "limit") or 20)}
 
 
+@route("/api/voice/execute")
+def voice_execute(qs):
+    """Execute browser-transcribed speech through the existing governed loop.
+
+    Browser speech synthesis handles the reply, so the server does not also
+    play it through the PC speaker. With no owner passphrase in a URL, this
+    deliberately runs as Guest and retains the existing permission boundary.
+    """
+    text = (qs.get("text", [""])[0] or "").strip()
+    language = (qs.get("language", ["en"])[0] or "en").split("-")[0].lower()
+    if not text:
+        return {"error": "empty transcript"}
+    if language not in {"en", "hi", "gu"}:
+        language = "en"
+    return voice._transcribe_and_execute(
+        audio=None,
+        identity_passphrase=None,
+        speak_response=False,
+        transcription={"text": text, "language": language, "confidence": 1.0},
+    )
+
+
 @route("/api/tasks")
 def tasks(qs):
     status = qs.get("status", [None])[0]
@@ -635,8 +663,6 @@ def workers_list(qs):
 
 @route("/api/health")
 def health(qs):
-    import os
-    from pathlib import Path
     db_ok = Path(config.DB_PATH).exists()
     return {
         "db_ok": db_ok,
@@ -644,6 +670,59 @@ def health(qs):
         "allow_exec": config.ALLOW_EXEC,
         "dry_run": config.TOOLS_DRY_RUN,
         "workspaces_dir": str(config.WORKSPACES_DIR),
+    }
+
+
+@route("/api/linux/runtime")
+def linux_runtime(qs):
+    """Current, read-only Linux host facts for the executive dashboard.
+
+    Values are sampled on request and are never inferred from old Mac data or
+    a decorative animation. GPU state remains explicit when the installed
+    NVIDIA utility cannot communicate with its kernel driver.
+    """
+    vm = psutil.virtual_memory()
+    disk = psutil.disk_usage(str(Path.home()))
+    battery = psutil.sensors_battery()
+    cpu_name = platform.processor() or platform.machine()
+    try:
+        for line in Path("/proc/cpuinfo").read_text(encoding="utf-8", errors="ignore").splitlines():
+            if line.startswith("model name"):
+                cpu_name = line.split(":", 1)[1].strip()
+                break
+    except OSError:
+        pass
+
+    gpu = {"state": "UNAVAILABLE", "name": None, "reason": "nvidia-smi is not installed"}
+    if shutil.which("nvidia-smi"):
+        try:
+            output = subprocess.run(
+                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                capture_output=True, text=True, timeout=3, check=True,
+            ).stdout.strip()
+            gpu = {"state": "CONNECTED", "name": output or "NVIDIA GPU", "reason": None}
+        except (OSError, subprocess.SubprocessError):
+            gpu = {"state": "DRIVER_ERROR", "name": None, "reason": "nvidia-smi cannot communicate with the NVIDIA driver"}
+
+    return {
+        "source": "LIVE_LOCAL_SAMPLE",
+        "sampled_at": time.time(),
+        "hostname": socket.gethostname(),
+        "os": platform.system(),
+        "kernel": platform.release(),
+        "architecture": platform.machine(),
+        "cpu_name": cpu_name,
+        "logical_cpus": psutil.cpu_count(),
+        "cpu_percent": round(psutil.cpu_percent(interval=0.15), 1),
+        "ram_percent": round(vm.percent, 1),
+        "ram_total_bytes": vm.total,
+        "disk_percent": round(disk.percent, 1),
+        "disk_free_bytes": disk.free,
+        "battery_percent": round(battery.percent, 1) if battery else None,
+        "battery_plugged": bool(battery.power_plugged) if battery else None,
+        "uptime_seconds": round(time.time() - psutil.boot_time()),
+        "gpu": gpu,
+        "api_port": int(os.environ.get("SHAKTHI_API_PORT", "8787")),
     }
 
 

@@ -496,7 +496,7 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
 
   return (
     <div
-      className={`${variant === "fullscreen" ? "fixed inset-0" : "relative w-full h-full"} overflow-hidden`}
+      className={`${variant === "fullscreen" ? "fixed inset-x-0 bottom-0 top-9" : "relative w-full h-full"} overflow-hidden`}
       style={{ background: variant === "fullscreen" ? "#020303" : "transparent" }}
     >
       <style>{`
@@ -519,7 +519,7 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
           <div className="text-xl font-semibold text-slate-100 mt-0.5">{title}</div>
         </div>
         <div className="flex items-center gap-3">
-          <AutoRefresh intervalSeconds={1} />
+          <AutoRefresh intervalSeconds={10} />
           {backLabel && (
             <a href={backHref} className="text-xs font-mono text-slate-400 hover:text-slate-100 border border-slate-700 rounded-full px-3 py-1.5">
               {backLabel}

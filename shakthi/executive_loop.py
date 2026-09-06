@@ -55,7 +55,7 @@ class ExecutiveLoop:
     def engineer(command,acceptance):
         command=" ".join(command.split())
         if not command: raise ValueError("empty Founder command")
-        return f"PROJECT:\nSHAKTHI_OS 3.1\n\nOBJECTIVE:\n{command}\n\nCONSTRAINTS:\n- preserve working functionality\n- no fabricated live data\n- governance, least privilege, audit and rollback\n\nTASKS:\n1. inspect\n2. plan\n3. delegate\n4. verify\n5. report and learn\n\nACCEPTANCE:\n"+"\n".join(f"- {x}" for x in acceptance)
+        return f"PROJECT:\nSHAKTHI_OS 3.2\n\nOBJECTIVE:\n{command}\n\nCONSTRAINTS:\n- preserve working functionality\n- no fabricated live data\n- governance, least privilege, audit and rollback\n\nTASKS:\n1. inspect\n2. plan\n3. delegate\n4. verify\n5. report and learn\n\nACCEPTANCE:\n"+"\n".join(f"- {x}" for x in acceptance)
     def create(self,command,*,risk="NORMAL",acceptance=None,confidence=60):
         if not 0<=confidence<=100: raise ValueError("bad confidence")
         acceptance=acceptance or ["tests pass","runtime evidence exists","Guardian review recorded"]

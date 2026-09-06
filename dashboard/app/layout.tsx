@@ -31,9 +31,9 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           <MatrixRain />
         </div>
         <ChatGptSitesCountdown />
-        <div className="relative z-10 flex pt-9">
+        <div className="relative z-10 flex flex-col pt-9 md:flex-row">
           <ConditionalSidebar angellaStatus={angellaStatus} />
-          <main className="flex-1 min-w-0 px-8 py-6">{children}</main>
+          <main className="flex-1 min-w-0 px-4 py-4 sm:px-6 md:px-8 md:py-6">{children}</main>
         </div>
       </body>
     </html>

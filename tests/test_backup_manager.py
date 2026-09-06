@@ -23,7 +23,7 @@ from orchestrator import backup_manager as bm
 def _good_checks():
     return {
         "git": {"captured": True, "commit": "deadbeef", "branch": "main", "dirty_file_count": 0},
-        "shakthi_version": "3.1.0",
+        "shakthi_version": "3.2.0",
         "database": {"readable": True, "integrity": "ok", "table_count": 1, "schema_hash": "abc"},
         "tests": {"passed": True, "returncode": 0, "summary": ["1 passed"]},
         "build": {"passed": True, "failures": []},

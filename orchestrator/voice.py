@@ -31,6 +31,7 @@ requires the founder to grant microphone permission to this process when
 macOS first prompts for it -- not something that can be granted
 programmatically.
 """
+import shutil
 import subprocess
 
 from . import access, bug_fixer, ceo as ceo_mod, db, finance, routing, security
@@ -60,14 +61,23 @@ def resolve_voice(voice: str = None, gender: str = None) -> str:
     return TTS_VOICES.get((gender or "male").lower(), VOICE_MALE)
 
 
-def speak(text: str, voice: str = None, gender: str = None) -> bool:
-    """Best-effort -- a founder on Linux, or a Mac with `say` unavailable
-    for some reason, still gets the text response; speech is additive,
-    never the only way the result reaches them."""
+def speak(text: str, voice: str = None, gender: str = None, language: str = "en") -> bool:
+    """Best-effort speech through the platform's local TTS engine."""
     resolved = resolve_voice(voice, gender)
+    command = None
+    if shutil.which("say"):
+        command = ["say", "-v", resolved, text]
+    else:
+        linux_tts = shutil.which("espeak-ng") or shutil.which("espeak")
+        if linux_tts:
+            lang = language if language in {"en", "hi", "gu"} else "en"
+            suffix = "+f3" if (gender or "male").lower() == "female" else "+m3"
+            command = [linux_tts, "-v", f"{lang}{suffix}", "-s", "165", text]
+    if command is None:
+        return False
     try:
-        subprocess.run(["say", "-v", resolved, text], timeout=30, check=False)
-        return True
+        completed = subprocess.run(command, timeout=30, check=False)
+        return completed.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
@@ -115,45 +125,66 @@ def detect_intent(text: str) -> dict:
     stripped = _strip_wake_word(text)
     lowered = stripped.lower()
 
-    if any(k in lowered for k in ("finance", "revenue", "profit")):
+    if any(k in lowered for k in ("finance", "revenue", "profit", "પૈસા", "આવક", "નફો", "वित्त", "कमाई", "मुनाफा")):
         return {"category": "finance", "action": "finance_report", "args": stripped}
-    if any(k in lowered for k in ("security", "audit")):
+    if any(k in lowered for k in ("security", "audit", "સુરક્ષા", "ચકાસણી", "सुरक्षा", "जांच")):
         return {"category": "security", "action": "security_review", "args": stripped}
-    if any(k in lowered for k in ("website", "site")):
+    if any(k in lowered for k in ("website", "site", "વેબસાઇટ", "સાઇટ", "वेबसाइट", "साइट")):
         return {"category": "status", "action": "website_check", "args": stripped}
-    if any(k in lowered for k in ("health", "system status", "sentinel")):
+    if any(k in lowered for k in ("health", "system status", "sentinel", "સિસ્ટમ", "સ્થિતિ", "સ્વાસ્થ્ય", "सिस्टम", "स्थिति", "स्वास्थ्य")):
         return {"category": "status", "action": "sentinel_check", "args": stripped}
-    if any(k in lowered for k in ("bug scan", "check bugs")):
+    if any(k in lowered for k in ("bug scan", "check bugs", "બગ", "ભૂલ", "बग", "गलती")):
         return {"category": "admin", "action": "bug_scan", "args": stripped}
     return {"category": "buddy", "action": "buddy_chat", "args": stripped}
 
 
-def execute_intent(intent: dict, identity: str) -> str:
+def execute_intent(intent: dict, identity: str, language: str = "en") -> str:
     if not access.allowed(identity, intent["category"]):
         return f"Sorry, a '{identity}' voice can't do that ({intent['category']} is restricted)."
 
     action = intent["action"]
     if action == "finance_report":
         r = finance.generate_report("monthly")
-        return f"Monthly revenue ${r['revenue_usd']:.2f}, profit ${r['profit_usd']:.2f}."
+        values = (r["revenue_usd"], r["profit_usd"])
+        if language == "hi":
+            return f"मासिक आय ${values[0]:.2f} और लाभ ${values[1]:.2f} है।"
+        if language == "gu":
+            return f"માસિક આવક ${values[0]:.2f} અને નફો ${values[1]:.2f} છે."
+        return f"Monthly revenue ${values[0]:.2f}, profit ${values[1]:.2f}."
     if action == "security_review":
         r = security.review()
+        if language == "hi":
+            return f"सुरक्षा स्कोर {r['score']} में से 100 है। {len(r['findings'])} निष्कर्ष मिले।"
+        if language == "gu":
+            return f"સુરક્ષા સ્કોર 100 માંથી {r['score']} છે. {len(r['findings'])} તારણ મળ્યાં."
         return f"Security score {r['score']}/100, {len(r['findings'])} findings."
     if action == "website_check":
         with db.get_conn() as conn:
             row = conn.execute("SELECT COUNT(*) as c FROM sites WHERE status = 'generated'").fetchone()
+        if language == "hi":
+            return f"अब तक {row['c']} साइट बनाई गई हैं।"
+        if language == "gu":
+            return f"અત્યાર સુધી {row['c']} સાઇટ બનાવવામાં આવી છે."
         return f"{row['c']} sites generated so far."
     if action == "sentinel_check":
         from . import sentinel
         h = sentinel.collect_health()
+        if language == "hi":
+            return f"सिस्टम स्वास्थ्य 100 में से {h['health_score']} और प्रदर्शन 100 में से {h['performance_score']} है।"
+        if language == "gu":
+            return f"સિસ્ટમ સ્વાસ્થ્ય 100 માંથી {h['health_score']} અને કામગીરી 100 માંથી {h['performance_score']} છે."
         return f"Health {h['health_score']}/100, performance {h['performance_score']}/100."
     if action == "bug_scan":
         candidates = bug_fixer.scan_for_bugs()
+        if language == "hi":
+            return f"लॉग में {len(candidates)} संभावित बग मिले।"
+        if language == "gu":
+            return f"લોગમાં {len(candidates)} સંભવિત બગ મળ્યા."
         return f"{len(candidates)} bug candidate(s) found in the logs."
     if action == "buddy_chat":
         from . import buddy
         mode = "family" if identity == "family" else "general"
-        result = buddy.chat("voice-session", mode, intent["args"])
+        result = buddy.chat("voice-session", mode, intent.get("prompt") or intent["args"])
         return result["response"]
     return "Sorry, I didn't understand that command."
 
@@ -187,6 +218,12 @@ def _transcribe_and_execute(audio, identity_passphrase: str = None, speak_respon
         transcription = transcribe(audio)
     identity = access.identify(identity_passphrase)
     intent = detect_intent(transcription["text"])
+    from . import jarvis_mediator
+    mediation = jarvis_mediator.build_prompt(
+        transcription["text"], intent, transcription.get("language")
+    )
+    intent["args"] = mediation["objective"]
+    intent["prompt"] = mediation["prompt"]
     denied = not access.allowed(identity, intent["category"])
 
     ceo_status = None
@@ -200,9 +237,9 @@ def _transcribe_and_execute(audio, identity_passphrase: str = None, speak_respon
             if decision["status"] != "approved":
                 result_text = f"CEO did not approve this ({decision['status']}): {decision.get('reason', '(no reason given)')}"
             else:
-                result_text = execute_intent(intent, identity)
+                result_text = execute_intent(intent, identity, mediation["language"])
         else:
-            result_text = execute_intent(intent, identity)
+            result_text = execute_intent(intent, identity, mediation["language"])
 
     denied_reason = None
     if denied:
@@ -218,11 +255,12 @@ def _transcribe_and_execute(audio, identity_passphrase: str = None, speak_respon
         )
 
     if speak_response:
-        speak(result_text, voice=voice, gender=gender)
+        speak(result_text, voice=voice, gender=gender, language=mediation["language"])
 
     return {
         "transcript": transcription["text"], "language": transcription["language"],
-        "identity": identity, "intent": intent, "ceo_status": ceo_status, "result": result_text,
+        "identity": identity, "intent": intent, "mediation": mediation,
+        "ceo_status": ceo_status, "result": result_text,
     }
 
 

@@ -37,9 +37,8 @@ def release_identity() -> dict[str, str]:
         (project_root() / "shakthi" / "__init__.py").stat().st_mtime, timezone.utc
     ).strftime("%Y%m%d.%H%M")
     return asdict(ReleaseIdentity(
-        product="SHAKTHI_OS", version=__version__, edition="Ultra Omni Intelligence",
+        product="SHAKTHI_OS", version=__version__, edition="Revenue Mission Engine",
         environment=os.getenv("SHAKTHI_ENV", "development").upper(),
         channel=os.getenv("SHAKTHI_RELEASE_CHANNEL", "local").upper(), build=stamp,
         git_commit=_git_commit(),
     ))
-

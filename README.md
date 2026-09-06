@@ -1,4 +1,11 @@
-# Shakthi OS (v4)
+# SHAKTHI_OS v3.2 — Revenue Mission Engine
+
+The v3.2 operating directive is documented in
+[`SHAKTHI_OS_3.2_REVENUE_MISSION_ENGINE.md`](SHAKTHI_OS_3.2_REVENUE_MISSION_ENGINE.md).
+It is currently **PLANNED**: begin with evidence-backed market-gap analysis
+and customer validation; do not code a new product before validation.
+
+## Earlier capability phases (retained)
 
 14 agents routed local-first through Ollama, a web dashboard, a Telegram
 command/alert bot, Google Sheets as the official ledger, a Bug Fixer +

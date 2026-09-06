@@ -40,6 +40,11 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
+  // Desktop launchers open the local dashboard through 127.0.0.1 while
+  // `next dev` binds as localhost. Without this explicit local-only allow
+  // entry, Next blocks the client chunks and Mission Control never hydrates,
+  // leaving its React Flow canvas blank.
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];
   },

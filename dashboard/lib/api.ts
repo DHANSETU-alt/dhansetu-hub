@@ -441,6 +441,29 @@ export const getWebsites = () => apiGet<{ sites: Site[] }>("/api/websites");
 export const getHealth = () =>
   apiGet<{ db_ok: boolean; ollama_host: string; allow_exec: boolean; dry_run: boolean; workspaces_dir: string }>("/api/health");
 
+export type LinuxRuntime = {
+  source: "LIVE_LOCAL_SAMPLE";
+  sampled_at: number;
+  hostname: string;
+  os: string;
+  kernel: string;
+  architecture: string;
+  cpu_name: string;
+  logical_cpus: number | null;
+  cpu_percent: number;
+  ram_percent: number;
+  ram_total_bytes: number;
+  disk_percent: number;
+  disk_free_bytes: number;
+  battery_percent: number | null;
+  battery_plugged: boolean | null;
+  uptime_seconds: number;
+  gpu: { state: "CONNECTED" | "DRIVER_ERROR" | "UNAVAILABLE"; name: string | null; reason: string | null };
+  api_port: number;
+};
+
+export const getLinuxRuntime = () => apiGet<LinuxRuntime>("/api/linux/runtime");
+
 export type Bug = {
   id: number;
   title: string;
