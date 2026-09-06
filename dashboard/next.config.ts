@@ -44,7 +44,15 @@ const nextConfig: NextConfig = {
   // `next dev` binds as localhost. Without this explicit local-only allow
   // entry, Next blocks the client chunks and Mission Control never hydrates,
   // leaving its React Flow canvas blank.
-  allowedDevOrigins: ["127.0.0.1", "localhost"],
+  //
+  // The Mac<->Linux Tailscale bridge (2026-09-06) hits the same wall from
+  // the other direction: opening either machine's dashboard via its
+  // tailnet IP (not 127.0.0.1/localhost) gets its dev-resource chunks
+  // blocked the same way, confirmed via a real "Blocked cross-origin
+  // request" warning in Linux's dashboard.log. Both machines' known
+  // tailnet addresses are allowlisted here so the same next.config.ts,
+  // synced to both, works from either side.
+  allowedDevOrigins: ["127.0.0.1", "localhost", "100.86.74.97", "100.117.111.80"],
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];
   },
