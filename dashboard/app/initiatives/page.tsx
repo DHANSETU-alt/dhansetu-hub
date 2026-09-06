@@ -1,6 +1,7 @@
 import { getInitiatives, type Initiative } from "@/lib/api";
 import { Card, CardHeader, CardBody, Badge, EmptyState } from "@/components/ui";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { SmartCopyButton } from "@/components/SmartCopyButton";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,7 @@ function InitiativeCard({ init, label }: { init: Initiative; label: string }) {
               {init.percent_complete}%
             </span>
             <Badge tone={STATUS_TONE[init.status] ?? "neutral"}>{init.status}</Badge>
+            <SmartCopyButton sourceId={init.id} sourceTitle={init.title} />
           </div>
         }
       />
@@ -36,6 +38,13 @@ function InitiativeCard({ init, label }: { init: Initiative; label: string }) {
             style={{ width: `${init.percent_complete}%` }}
           />
         </div>
+
+        {init.context?.cloned_from_title && (
+          <p className="text-xs text-[var(--muted-foreground)] mb-3">
+            Smart-copied from &ldquo;{init.context.cloned_from_title}&rdquo;
+            {init.context.note ? ` — ${init.context.note}` : ""}
+          </p>
+        )}
 
         {init.artifact_url && (
           <a
@@ -148,7 +157,7 @@ export default async function InitiativesPage() {
           <h1 className="text-xl font-semibold">Founder Tasks &amp; Projects</h1>
           <p className="text-sm text-[var(--muted-foreground)] mt-1">
             Three separate tracks, never mixed: Tasks are real web-based work; Projects are big cross-platform
-            software builds (Mac, Windows, Linux, iOS, Android); OS is reserved exclusively for Shakthi_OS's own
+            software builds, now developed and verified Linux-first; OS is reserved exclusively for Shakthi_OS's own
             core upgrades. Percent complete is computed from real milestones below, never a hand-picked number.
           </p>
         </div>
@@ -165,7 +174,7 @@ export default async function InitiativesPage() {
         />
         <TrackColumn
           heading="Projects (software dev)"
-          description="Project 1, Project 2, ... — big cross-platform builds: Mac, Windows, Linux, iOS, Android."
+          description="Project 1, Project 2, ... — Linux-first software builds; other platform ports remain separate verified milestones."
           emptyHint={`No projects tracked yet. Use --initiative-add "TITLE" --initiative-track project from the CLI to start Project 1.`}
           label="Project"
           items={projects}

@@ -7,7 +7,7 @@ from shakthi.telemetry import TelemetryCollector
 class TelemetryTests(unittest.TestCase):
     def test_release_identity_uses_central_version(self):
         release = release_identity()
-        self.assertEqual(release["version"], "3.1.0")
+        self.assertEqual(release["version"], "3.2.0")
         self.assertTrue(release["build"])
 
     def test_collector_has_explicit_sources_and_deterministic_score(self):

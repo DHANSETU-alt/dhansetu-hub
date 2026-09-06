@@ -1,0 +1,17 @@
+Shakthi_OS v3.2.0
+Revenue Mission Engine — Linux import based on the portable v3.1.1 snapshot
+Original snapshot taken 2026-09-03 from /Users/apple/shakthi-os
+Source commit: see .git (run `git log -1` in this folder)
+
+This is a real, working copy of the Shakthi_OS codebase and database
+(shakthi.db) -- not just source files. dashboard/node_modules and
+dashboard/.next were left out on purpose (platform-specific binaries /
+build cache) -- PLUG_AND_PLAY.py rebuilds them fresh on whatever machine
+you plug this drive into.
+
+Requires on the host machine: Python 3.10+, Node.js 18+ (with npm).
+Neither is bundled on this drive -- installing a full Python or Node
+runtime per OS/architecture was out of scope for this pass.
+
+To start: run `python3 PLUG_AND_PLAY.py` (macOS/Linux) or
+`python PLUG_AND_PLAY.py` (Windows) from this folder.

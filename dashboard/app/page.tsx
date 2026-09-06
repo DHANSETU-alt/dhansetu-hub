@@ -1,4 +1,4 @@
-import { getOverview, getGovernorStatus, getCeoHealth, getIncidents, getWorkers, getPaymentLinks, getSecurityLatest, getInitiatives } from "@/lib/api";
+import { getOverview, getGovernorStatus, getCeoHealth, getIncidents, getWorkers, getPaymentLinks, getSecurityLatest, getInitiatives, getLinuxRuntime } from "@/lib/api";
 import { Card, CardHeader, CardBody, StatTile, Badge, EmptyState } from "@/components/ui";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import Link from "next/link";
@@ -23,25 +23,75 @@ export default async function ExecutiveDashboard() {
   const ollama = overview.cost_summary.find((c) => c.provider === "ollama");
   const claude = overview.cost_summary.find((c) => c.provider === "claude");
 
-  const [governor, ceoHealth, incidentsResult, workersResult, paymentsResult, securityResult, initiativesResult] = await Promise.all([
+  const [governor, ceoHealth, incidentsResult, workersResult, paymentsResult, securityResult, initiativesResult, linuxRuntime] = await Promise.all([
     getGovernorStatus().catch(() => null),
     getCeoHealth().catch(() => null),
     getIncidents().catch(() => null),
     getWorkers(20).catch(() => null),
     getPaymentLinks(20).catch(() => null),
     getSecurityLatest().catch(() => null),
-    getInitiatives("running").catch(() => null),
+    // The Founder dashboard is the task ledger of record. Do not hide
+    // completed or paused initiatives here: that made the Linux migration
+    // look as if imported Mac tasks were missing even though they remained
+    // present in the API and database.
+    getInitiatives().catch(() => null),
+    getLinuxRuntime().catch(() => null),
   ]);
-  const runningInitiatives = initiativesResult?.initiatives ?? [];
+  const allInitiatives = initiativesResult?.initiatives ?? [];
+  const revenueMission = allInitiatives.find((initiative) => initiative.title.includes("Revenue Mission Engine"));
+  const initiativeLabel = (track: string, seq: number) =>
+    `${track === "os" ? "OS" : track === "project" ? "Project" : "Task"} ${seq}`;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Executive Dashboard</h1>
-          <p className="text-sm text-[var(--muted-foreground)] mt-1">Founder-level overview across every business, agent, and system built this session.</p>
+          <div className="mb-2 flex flex-wrap gap-2"><Badge tone="local">Linux control center</Badge><Badge tone={linuxRuntime ? "good" : "bad"}>{linuxRuntime ? "Runtime connected" : "Runtime unavailable"}</Badge></div>
+          <h1 className="text-2xl font-semibold tracking-tight">SHAKTHI_OS 3.2 Working Board</h1>
+          <p className="text-sm text-[var(--muted-foreground)] mt-1">Founder-level view of data stored and services running on this Linux installation.</p>
         </div>
         <AutoRefresh intervalSeconds={15} />
+      </div>
+
+      <nav className="work-shortcuts" aria-label="Working areas">
+        <Link href="/initiatives"><strong>Founder tasks</strong><small>Review pending work and initiative status</small></Link>
+        <Link href="/tasks"><strong>Task pipeline</strong><small>Inspect execution records and results</small></Link>
+        <Link href="/command-center"><strong>Issue a command</strong><small>Submit work through the existing controls</small></Link>
+        <Link href="/connections"><strong>Connections</strong><small>Check local data and execution readiness</small></Link>
+      </nav>
+
+      <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
+        <Card>
+          <CardHeader title="Linux Runtime" subtitle={linuxRuntime ? `Live local sample · ${linuxRuntime.hostname} · API :${linuxRuntime.api_port}` : "No current Linux sample available"} action={<Badge tone={linuxRuntime ? "good" : "bad"}>{linuxRuntime ? "LIVE LOCAL" : "DISCONNECTED"}</Badge>} />
+          <CardBody>
+            {linuxRuntime ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <StatTile label="CPU" value={`${linuxRuntime.cpu_percent}%`} hint={`${linuxRuntime.logical_cpus ?? "—"} logical CPUs`} tone={linuxRuntime.cpu_percent > 90 ? "bad" : linuxRuntime.cpu_percent > 75 ? "warn" : "good"} />
+                  <StatTile label="RAM" value={`${linuxRuntime.ram_percent}%`} hint={`${(linuxRuntime.ram_total_bytes / 1073741824).toFixed(1)} GiB total`} tone={linuxRuntime.ram_percent > 90 ? "bad" : linuxRuntime.ram_percent > 80 ? "warn" : "good"} />
+                  <StatTile label="Disk" value={`${linuxRuntime.disk_percent}%`} hint={`${(linuxRuntime.disk_free_bytes / 1073741824).toFixed(0)} GiB free`} tone={linuxRuntime.disk_percent > 90 ? "bad" : linuxRuntime.disk_percent > 80 ? "warn" : "good"} />
+                  <StatTile label="Battery" value={linuxRuntime.battery_percent === null ? "N/A" : `${linuxRuntime.battery_percent}%`} hint={linuxRuntime.battery_plugged === null ? "Not detected" : linuxRuntime.battery_plugged ? "AC connected" : "On battery"} tone={linuxRuntime.battery_plugged === false ? "warn" : "good"} />
+                </div>
+                <div className="grid gap-2 text-xs text-[var(--muted-foreground)] sm:grid-cols-2">
+                  <div className="rounded-md border border-[var(--border)] bg-black/20 p-3"><span className="block text-[10px] uppercase tracking-wider">Host</span><span className="text-[var(--ink)]">{linuxRuntime.os} {linuxRuntime.kernel} · {linuxRuntime.architecture}</span></div>
+                  <div className="rounded-md border border-[var(--border)] bg-black/20 p-3"><span className="block text-[10px] uppercase tracking-wider">Processor</span><span className="text-[var(--ink)]">{linuxRuntime.cpu_name}</span></div>
+                  <div className="rounded-md border border-[var(--border)] bg-black/20 p-3 sm:col-span-2"><span className="block text-[10px] uppercase tracking-wider">NVIDIA GPU</span><span className={linuxRuntime.gpu.state === "CONNECTED" ? "text-[var(--good)]" : "text-[var(--warn)]"}>{linuxRuntime.gpu.state === "CONNECTED" ? linuxRuntime.gpu.name : `${linuxRuntime.gpu.state} — ${linuxRuntime.gpu.reason}`}</span></div>
+                </div>
+              </div>
+            ) : <EmptyState>Linux runtime API did not return a sample. Stored business data below may still be available.</EmptyState>}
+          </CardBody>
+        </Card>
+        <Card>
+          <CardHeader title="Revenue Mission" subtitle="Execution progress, not planning completion" action={<Badge tone={revenueMission?.status === "running" ? "good" : "neutral"}>{revenueMission?.status ?? "unavailable"}</Badge>} />
+          <CardBody>
+            {revenueMission ? <>
+              <div className="flex items-end justify-between"><span className="text-4xl font-semibold font-mono-num">{revenueMission.percent_complete}%</span><span className="text-xs text-[var(--muted-foreground)]">{revenueMission.milestone_done}/{revenueMission.milestone_total} milestones</span></div>
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-[var(--surface-2)]"><div className="h-full rounded-full bg-[var(--local)]" style={{ width: `${revenueMission.percent_complete}%` }} /></div>
+              <div className="mt-4 grid grid-cols-2 gap-2 text-xs"><div className="rounded-md border border-[var(--border)] p-3"><span className="block text-[var(--muted-foreground)]">Verified revenue</span><b className="mt-1 block text-lg">₹0</b></div><div className="rounded-md border border-[var(--border)] p-3"><span className="block text-[var(--muted-foreground)]">Next gate</span><b className="mt-1 block">Send 5 messages</b></div></div>
+              <Link href="/initiatives" className="mt-4 inline-block text-xs text-[var(--local)] hover:underline">Open mission milestones →</Link>
+            </> : <EmptyState>Revenue Mission initiative is unavailable.</EmptyState>}
+          </CardBody>
+        </Card>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -56,7 +106,7 @@ export default async function ExecutiveDashboard() {
       </div>
 
       <Card>
-        <CardHeader title="System Status" subtitle="Live, across every subsystem — not just the original task ledger above" />
+        <CardHeader title="Subsystem Status" subtitle="Live responses where connected; unavailable or stored signals remain explicitly marked" />
         <CardBody>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <Link href="/mission-control" className="block">
@@ -72,10 +122,10 @@ export default async function ExecutiveDashboard() {
               <StatTile label="Worker Queue" value={workersResult ? String(workersResult.load_balancer.queue_depth) : "—"} tone={workersResult?.load_balancer.overflowing ? "bad" : "good"} />
             </Link>
             <Link href="/payments" className="block">
-              <StatTile label="Payments Collected" value={paymentsResult ? `₹${paymentsResult.total_paid_inr.toLocaleString("en-IN")}` : "—"} tone="good" />
+              <StatTile label="Payments Collected" value={paymentsResult ? `₹${paymentsResult.total_paid_inr.toLocaleString("en-IN")}` : "—"} tone={paymentsResult?.total_paid_inr ? "good" : "neutral"} hint={paymentsResult ? "Verified stored records" : "Payment API unavailable"} />
             </Link>
             <Link href="/security" className="block">
-              <StatTile label="Security Score" value={securityResult?.latest_report ? `${securityResult.latest_report.score}/100` : "—"}
+              <StatTile label="Security Score" value={securityResult?.latest_report ? `${securityResult.latest_report.score}/100` : "—"} hint={securityResult?.latest_report ? `Stored scan: ${securityResult.latest_report.created_at}` : "No stored scan"}
                          tone={securityResult?.latest_report ? (securityResult.latest_report.score >= 70 ? "good" : "bad") : "neutral"} />
             </Link>
           </div>
@@ -84,8 +134,8 @@ export default async function ExecutiveDashboard() {
 
       <Card>
         <CardHeader
-          title="Founder Tasks — running now"
-          subtitle="Task 1, Task 2, ... — real % complete from real milestones"
+          title="Founder Tasks, Projects &amp; OS — complete ledger"
+          subtitle={`${allInitiatives.length} imported and Linux-native initiatives — real progress from stored milestones`}
           action={
             <Link href="/initiatives" className="text-xs font-mono text-[var(--local)] hover:underline">
               View all →
@@ -93,18 +143,23 @@ export default async function ExecutiveDashboard() {
           }
         />
         <CardBody>
-          {runningInitiatives.length === 0 ? (
-            <EmptyState>No task currently running.</EmptyState>
+          {allInitiatives.length === 0 ? (
+            <EmptyState>No initiatives recorded.</EmptyState>
           ) : (
             <div className="space-y-3">
-              {runningInitiatives.map((init) => (
+              {allInitiatives.map((init) => (
                 <Link key={init.id} href="/initiatives" className="block">
-                  <div className="flex items-center justify-between text-sm mb-1">
-                    <span className="text-[var(--ink)]">
-                      Task {init.seq} — {init.title}
+                  <div className="flex flex-col gap-1 text-sm mb-1 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-[var(--ink)] min-w-0">
+                      {initiativeLabel(init.track, init.seq)} — {init.title}
                     </span>
-                    <span className="font-mono-num text-[var(--muted-foreground)]">
-                      {init.percent_complete}% ({init.milestone_done}/{init.milestone_total})
+                    <span className="flex items-center gap-2 shrink-0">
+                      <Badge tone={init.status === "running" ? "good" : init.status === "paused" ? "warn" : "neutral"}>
+                        {init.status}
+                      </Badge>
+                      <span className="font-mono-num text-[var(--muted-foreground)]">
+                        {init.percent_complete}% ({init.milestone_done}/{init.milestone_total})
+                      </span>
                     </span>
                   </div>
                   <div className="h-1.5 rounded-full bg-[var(--surface-2)] overflow-hidden">
@@ -121,12 +176,12 @@ export default async function ExecutiveDashboard() {
       </Card>
 
       <Card>
-        <CardHeader title="Recent Tasks" subtitle="Most recent 15 tasks across all businesses" />
+        <CardHeader title="Recent Task Records" subtitle="Most recent 15 stored records; timestamps show freshness" />
         <CardBody className="p-0">
           {overview.recent_tasks.length === 0 ? (
             <EmptyState>No tasks yet. Run one from the CLI to see it here.</EmptyState>
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm">
               <thead>
                 <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--muted-foreground)] border-b border-[var(--border)]">
                   <th className="px-5 py-2 font-medium">ID</th>
@@ -153,7 +208,7 @@ export default async function ExecutiveDashboard() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </CardBody>
       </Card>

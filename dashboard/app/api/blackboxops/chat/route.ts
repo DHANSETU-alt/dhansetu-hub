@@ -20,6 +20,23 @@ async function backendIsUp(): Promise<boolean> {
   }
 }
 
+async function dashboardSnapshot(): Promise<string> {
+  try {
+    const [tasksRes, initiativesRes] = await Promise.all([
+      fetch(`${API_BASE}/api/tasks`, { cache: "no-store", signal: AbortSignal.timeout(3000) }),
+      fetch(`${API_BASE}/api/initiatives`, { cache: "no-store", signal: AbortSignal.timeout(3000) }),
+    ]);
+    if (!tasksRes.ok || !initiativesRes.ok) return "DASHBOARD SNAPSHOT: unavailable";
+    const tasks = await tasksRes.json();
+    const initiatives = await initiativesRes.json();
+    const incompleteTasks = (tasks.tasks || []).filter((t: any) => !["completed", "done", "cancelled"].includes(String(t.status).toLowerCase())).slice(0, 20);
+    const incompleteInitiatives = (initiatives.initiatives || []).filter((i: any) => !["completed", "done", "cancelled"].includes(String(i.status).toLowerCase())).slice(0, 12);
+    return `DASHBOARD SNAPSHOT (read-only, collected now):\nTASKS: ${JSON.stringify(incompleteTasks)}\nINITIATIVES: ${JSON.stringify(incompleteInitiatives)}\nCOUNTS: ${JSON.stringify(tasks.counts || {})}`;
+  } catch {
+    return "DASHBOARD SNAPSHOT: unavailable";
+  }
+}
+
 export async function GET() {
   return NextResponse.json({ up: await backendIsUp() });
 }
@@ -38,8 +55,10 @@ export async function POST(req: NextRequest) {
     // under load (this machine has hit real Ollama contention before),
     // so real headroom, not a snappy-feeling short timeout that just
     // fails under normal load.
+    const snapshot = await dashboardSnapshot();
+    const guidedMessage = `${snapshot}\n\nFOUNDER MESSAGE:\n${message}\n\nReview the snapshot first. Respond as Angella, the SHAKTHI_OS delivery partner: give the highest-priority unfinished item, a finish plan, blockers, and a clearly labeled FOUNDER ACTION REQUIRED list. Preserve the founder's intent.`;
     const { stdout } = await execFileAsync(
-      "python3", ["-m", "orchestrator.cli", "--chat-message", message, "--chat-agent", "sales"],
+      "python3", ["-m", "orchestrator.cli", "--chat-message", guidedMessage, "--chat-agent", "pa_angella"],
       { cwd: PROJECT_ROOT, timeout: 110_000 }
     );
     const parsed = JSON.parse(stdout.trim().split("\n").pop() || "{}");

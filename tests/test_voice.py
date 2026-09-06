@@ -30,7 +30,8 @@ class TestResolveVoice(unittest.TestCase):
 
 class TestSpeak(unittest.TestCase):
     @patch("orchestrator.voice.subprocess.run")
-    def test_speak_invokes_say_with_resolved_voice(self, mock_run):
+    @patch("orchestrator.voice.shutil.which", side_effect=lambda name: "/usr/bin/say" if name == "say" else None)
+    def test_speak_invokes_say_with_resolved_voice(self, _mock_which, mock_run):
         mock_run.return_value = MagicMock(returncode=0)
         ok = voice.speak("Good evening.", gender="female")
         self.assertTrue(ok)
@@ -38,14 +39,23 @@ class TestSpeak(unittest.TestCase):
         self.assertEqual(args[0], ["say", "-v", voice.VOICE_FEMALE, "Good evening."])
 
     @patch("orchestrator.voice.subprocess.run")
-    def test_speak_explicit_voice_overrides_gender(self, mock_run):
+    @patch("orchestrator.voice.shutil.which", side_effect=lambda name: "/usr/bin/say" if name == "say" else None)
+    def test_speak_explicit_voice_overrides_gender(self, _mock_which, mock_run):
+        mock_run.return_value = MagicMock(returncode=0)
         voice.speak("Hi.", voice="Karen", gender="male")
         args, kwargs = mock_run.call_args
         self.assertEqual(args[0][2], "Karen")
 
-    @patch("orchestrator.voice.subprocess.run", side_effect=FileNotFoundError)
-    def test_speak_returns_false_when_say_missing(self, mock_run):
+    @patch("orchestrator.voice.shutil.which", return_value=None)
+    def test_speak_returns_false_when_say_missing(self, _mock_which):
         self.assertFalse(voice.speak("Hi."))
+
+    @patch("orchestrator.voice.subprocess.run")
+    @patch("orchestrator.voice.shutil.which", side_effect=lambda name: "/usr/bin/espeak-ng" if name == "espeak-ng" else None)
+    def test_speak_uses_gujarati_linux_voice(self, _mock_which, mock_run):
+        mock_run.return_value = MagicMock(returncode=0)
+        self.assertTrue(voice.speak("સિસ્ટમ તૈયાર છે", gender="female", language="gu"))
+        self.assertEqual(mock_run.call_args.args[0][:5], ["/usr/bin/espeak-ng", "-v", "gu+f3", "-s", "165"])
 
 
 class TestContainsWakeWord(unittest.TestCase):

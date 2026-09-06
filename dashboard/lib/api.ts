@@ -153,6 +153,13 @@ export type InitiativeMilestone = {
   created_at: string;
   done_at: string | null;
 };
+export type InitiativeContext = {
+  cloned_from_id: number;
+  cloned_from_title: string;
+  source_context: InitiativeContext | null;
+  milestone_template: string[];
+  note: string | null;
+};
 export type Initiative = {
   id: number;
   track: "task" | "project" | "os";
@@ -162,6 +169,8 @@ export type Initiative = {
   status: "running" | "paused" | "done";
   created_at: string;
   updated_at: string;
+  context: InitiativeContext | null;
+  cloned_from_id: number | null;
   milestones: InitiativeMilestone[];
   milestone_total: number;
   milestone_done: number;
@@ -169,6 +178,17 @@ export type Initiative = {
 };
 export const getInitiatives = (status?: string) =>
   apiGet<{ initiatives: Initiative[] }>(`/api/initiatives${status ? `?status=${status}` : ""}`);
+
+// Smart Copy (Shakthi_OS 3.1.1) -- clone an initiative as a starting
+// template for a new one; the new initiative's `context` carries the
+// source's title/milestones/note so an assigned agent doesn't need a
+// separate catch-up conversation.
+export const smartCopyInitiative = (id: number, title?: string, note?: string) => {
+  const params = new URLSearchParams({ id: String(id) });
+  if (title) params.set("title", title);
+  if (note) params.set("note", note);
+  return apiGet<{ initiative?: Initiative; error?: string }>(`/api/initiatives/smart-copy?${params.toString()}`);
+};
 
 export type PaAngellaStatus = {
   last_task: { id: number; status: string; created_at: string } | null;
@@ -420,6 +440,29 @@ export const getWebsites = () => apiGet<{ sites: Site[] }>("/api/websites");
 
 export const getHealth = () =>
   apiGet<{ db_ok: boolean; ollama_host: string; allow_exec: boolean; dry_run: boolean; workspaces_dir: string }>("/api/health");
+
+export type LinuxRuntime = {
+  source: "LIVE_LOCAL_SAMPLE";
+  sampled_at: number;
+  hostname: string;
+  os: string;
+  kernel: string;
+  architecture: string;
+  cpu_name: string;
+  logical_cpus: number | null;
+  cpu_percent: number;
+  ram_percent: number;
+  ram_total_bytes: number;
+  disk_percent: number;
+  disk_free_bytes: number;
+  battery_percent: number | null;
+  battery_plugged: boolean | null;
+  uptime_seconds: number;
+  gpu: { state: "CONNECTED" | "DRIVER_ERROR" | "UNAVAILABLE"; name: string | null; reason: string | null };
+  api_port: number;
+};
+
+export const getLinuxRuntime = () => apiGet<LinuxRuntime>("/api/linux/runtime");
 
 export type Bug = {
   id: number;

@@ -16,6 +16,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { href: "/command-center", label: "Founder Command Center" },
       { href: "/initiatives", label: "Founder Tasks" },
       { href: "/mission-control", label: "Mission Control" },
+      { href: "/connections", label: "Connections & readiness" },
     ],
   },
   {
@@ -72,7 +73,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
 export function Sidebar({ angellaStatus }: { angellaStatus?: PaAngellaStatus | null }) {
   const pathname = usePathname();
   return (
-    <nav className="glass w-60 shrink-0 border-r-0 h-screen sticky top-0 overflow-y-auto relative z-20">
+    <nav className="glass w-full shrink-0 border-r-0 max-h-44 overflow-y-auto relative z-20 md:w-60 md:h-screen md:max-h-none md:sticky md:top-0">
       <div className="px-4 py-5 border-b border-[var(--border)]">
         <div className="text-sm font-semibold tracking-tight">SHAKTHI AI OS</div>
         <div className="text-[11px] text-[var(--muted-foreground)] mt-0.5">Founder Control Center</div>
