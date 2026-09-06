@@ -110,6 +110,18 @@ Mac changes role from "independent instance" to "client + execution node":
 4. Once that's confirmed: point Mac's `API_BASE` at Linux's tailnet address (`http://100.86.74.97:8787`), archive Mac's local `shakthi.db`, stop Mac's local API/dashboard processes, add the `executor=mac` polling endpoint to `orchestrator/api.py` on Linux, and run the round-trip validation (Task 12 status check from Mac, matching Linux exactly) described earlier in this spec.
 5. The `linux-3.2` git remote is configured only on the Mac side (`blackboxops@100.86.74.97:ShakthiOS_v3.2`, via `GIT_SSH_COMMAND="ssh -i ~/.ssh/shakthi_bridge_ed25519"` since no SSH config alias exists yet) — future syncs should use this same path.
 
+## Revised decision, 2026-09-06 ~20:45 IST (supersedes the single-shared-database goal above)
+
+Founder's final call, after seeing the original "Linux is control-plane" framing again in practice: **both machines keep their own writable `shakthi.db`. Mac is master — on any content conflict for the same `(track, seq)` key, Mac's version wins.** This replaces Goal 7 ("Mac never computes its own status") — drift is now prevented by periodic reconciliation, not by eliminating the second database.
+
+Built and verified: `orchestrator/sync_bridge.py` (commit `40f8363`), run from the Mac. Dry-run by default, `--apply` to write. Matches `initiatives` + `initiative_milestones` by `(track, seq)`: one-side-only rows are copied to the other (union, nothing dropped), genuine same-key content conflicts are overwritten with Mac's values. Verified end-to-end with a real throwaway test row (union-copy, conflict-detect, conflict-resolve all confirmed, then cleaned up from both machines).
+
+**One real conflict found and resolved by hand before the script existed:** `project|2` had diverged (Mac: "Upkeeper for Mac", Linux: "Upkeeper for Linux" with a documented retargeting note and 4 new milestones). Founder's call: don't apply blind Mac-wins here — split into two distinct initiatives instead. Project 2 = reverted to Mac's original untouched. Project 3 = new entry carrying Linux's full evolved record (all 9 milestones, its context note). Both machines now have identical rows for both.
+
+**NOT covered by sync_bridge.py**: the other ~50 tables in shakthi.db (tasks, decisions, memory_entries, cost_ledger, agents, etc.) — those still operate fully independently per machine. No `API_BASE` repointing was done or is planned under this revised model, since each machine keeps its own live database.
+
+**Still open**: how/when `sync_bridge.py` actually runs (manual invocation only so far — no cron/timer set up, that would be a new standing automation decision needing the founder's sign-off first) and whether the same conflict-resolution scope should extend beyond initiatives to other tables.
+
 ## Rollback
 
 Every step is reversible: remove the git remote, delete `shakthi_bridge_ed25519` from Mac and its entry from Linux's `authorized_keys`, un-enroll either machine from Tailscale, restore Mac's archived `shakthi.db` and repoint `API_BASE` back to `127.0.0.1:8787` to return Mac to a fully standalone instance.
