@@ -22,7 +22,7 @@ export default async function CeoDashboardPage() {
             Decisions score priority/risk/business-impact 1-10 and fail closed to &quot;revise&quot; if unparseable — never a silent approval.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={20} />
+        <AutoRefresh intervalSeconds={1} />
       </div>
 
       <div className="grid grid-cols-3 gap-4">

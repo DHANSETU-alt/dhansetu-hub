@@ -39,7 +39,7 @@ export default async function FailureAnalysesPage() {
             <code>orchestrator/failure_analysis.py</code>.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={30} />
+        <AutoRefresh intervalSeconds={1} />
       </div>
 
       {analyses.length === 0 ? (

@@ -50,7 +50,7 @@ export default async function ExecutiveDashboard() {
           <h1 className="text-2xl font-semibold tracking-tight">SHAKTHI_OS 3.2 Working Board</h1>
           <p className="text-sm text-[var(--muted-foreground)] mt-1">Founder-level view of data stored and services running on this Linux installation.</p>
         </div>
-        <AutoRefresh intervalSeconds={15} />
+        <AutoRefresh intervalSeconds={1} />
       </div>
 
       <nav className="work-shortcuts" aria-label="Working areas">

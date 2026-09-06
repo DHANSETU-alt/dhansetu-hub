@@ -161,7 +161,7 @@ export default async function InitiativesPage() {
             core upgrades. Percent complete is computed from real milestones below, never a hand-picked number.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={20} />
+        <AutoRefresh intervalSeconds={1} />
       </div>
 
       <div className="flex flex-col lg:flex-row gap-6 items-start">

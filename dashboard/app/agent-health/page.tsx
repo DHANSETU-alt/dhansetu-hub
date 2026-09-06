@@ -44,7 +44,7 @@ export default async function AgentHealthPage() {
             Real task activity per agent ({statWindow}) -- registration + recent-run status, not a live uptime probe.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={30} />
+        <AutoRefresh intervalSeconds={1} />
       </div>
 
       {Object.entries(byLayer).map(([layer, layerAgents]) => (

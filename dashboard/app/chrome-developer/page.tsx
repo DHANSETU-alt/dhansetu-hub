@@ -27,7 +27,7 @@ export default async function ChromeDeveloperPage() {
             after every Website Builder site.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={30} />
+        <AutoRefresh intervalSeconds={1} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

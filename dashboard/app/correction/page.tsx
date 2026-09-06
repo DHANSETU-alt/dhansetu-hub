@@ -35,7 +35,7 @@ export default async function CorrectionDashboardPage() {
             Runs automatically after Bug Fixer patches, Website Builder pipelines, and codebase audits.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={30} />
+        <AutoRefresh intervalSeconds={1} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

@@ -25,7 +25,7 @@ export default async function PaymentsDashboardPage() {
             demand (<code>--check-payment</code>), not pushed — this system has no public webhook receiver.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={30} />
+        <AutoRefresh intervalSeconds={1} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

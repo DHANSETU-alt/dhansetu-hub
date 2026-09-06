@@ -28,7 +28,7 @@ export default async function WorkersDashboardPage() {
             Builder, and Chrome Developer — real parallel execution (ThreadPoolExecutor), never a business decision.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={15} />
+        <AutoRefresh intervalSeconds={1} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

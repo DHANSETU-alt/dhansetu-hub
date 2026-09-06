@@ -21,7 +21,7 @@ export default async function FinanceDashboardPage() {
             Revenue/expense are whatever&apos;s logged via <code>--finance-entry</code> — no live billing integration exists.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={30} />
+        <AutoRefresh intervalSeconds={1} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

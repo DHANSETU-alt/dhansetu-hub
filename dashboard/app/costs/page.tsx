@@ -14,7 +14,7 @@ export default async function CostLedgerPage() {
           <h1 className="text-xl font-semibold">Cost Ledger</h1>
           <p className="text-sm text-[var(--muted-foreground)] mt-1">Every model call is logged, local calls included, at $0.</p>
         </div>
-        <AutoRefresh intervalSeconds={15} />
+        <AutoRefresh intervalSeconds={1} />
       </div>
 
       <div className="grid grid-cols-3 gap-4">

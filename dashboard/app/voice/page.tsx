@@ -20,7 +20,7 @@ export default async function VoiceCommanderPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Voice Commander</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted-foreground)]">Speak naturally in English, Hindi, or Gujarati. Jarvis converts loose conversation into a structured OS request, checks identity and risk, routes the request, and speaks back the result.</p>
         </div>
-        <AutoRefresh intervalSeconds={15} />
+        <AutoRefresh intervalSeconds={1} />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

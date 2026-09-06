@@ -24,7 +24,7 @@ export default async function AgentRegistryPage() {
             Every agent is a config row, not a deployed service — adding the 12th agent is a yaml file, not code.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={30} />
+        <AutoRefresh intervalSeconds={1} />
       </div>
 
       {Object.entries(byLayer).map(([layer, layerAgents]) => (

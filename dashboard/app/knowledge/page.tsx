@@ -14,7 +14,7 @@ export default async function KnowledgeExplorerPage() {
             Plain-text search (no embeddings) over SOPs, notes, and references — the Shakthi Knowledge agent answers from these.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={30} />
+        <AutoRefresh intervalSeconds={1} />
       </div>
 
       <Card>

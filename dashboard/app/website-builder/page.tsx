@@ -25,7 +25,7 @@ export default async function WebsiteBuilderPage() {
             Founder Request → CEO Review → Requirements → Build → QA → Security → Deployment Package.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={15} />
+        <AutoRefresh intervalSeconds={1} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

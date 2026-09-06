@@ -6,7 +6,7 @@ import Link from "next/link";
 export default async function Connections() {
   const [health, runtime] = await Promise.all([getHealth().catch(() => null), getLinuxRuntime().catch(() => null)]);
   return <div className="space-y-6">
-    <div className="flex flex-wrap items-center justify-between gap-4"><h1 className="text-2xl font-semibold">Connections & readiness</h1><AutoRefresh intervalSeconds={15}/></div>
+    <div className="flex flex-wrap items-center justify-between gap-4"><h1 className="text-2xl font-semibold">Connections & readiness</h1><AutoRefresh intervalSeconds={1}/></div>
     <p className="text-[var(--muted-foreground)]">Local API evidence for this installation. A reachable endpoint does not prove successful task execution.</p>
     <div className="grid gap-5 md:grid-cols-2">
       <Card><CardHeader title="Orchestrator API" action={<Badge tone={health ? "good" : "bad"}>{health ? "REACHABLE" : "UNAVAILABLE"}</Badge>}/><CardBody>Database: {health ? (health.db_ok ? "responding" : "check failed") : "unknown"}<p>Execution permission: {health ? (health.allow_exec ? "enabled" : "disabled by existing policy") : "unknown"}</p><p>Dry run: {health ? String(health.dry_run) : "unknown"}</p></CardBody></Card>
