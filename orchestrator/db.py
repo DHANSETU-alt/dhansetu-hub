@@ -38,6 +38,7 @@ def init_db():
         conn.executescript(config.SCHEMA_PATH.read_text())
         _migrate_agents_squad_column(conn)
         _migrate_content_queue_platform_column(conn)
+        _migrate_initiatives_context_columns(conn)
 
 
 def _migrate_agents_squad_column(conn):
@@ -56,6 +57,17 @@ def _migrate_content_queue_platform_column(conn):
     cols = [row[1] for row in conn.execute("PRAGMA table_info(content_queue)").fetchall()]
     if "platform" not in cols:
         conn.execute("ALTER TABLE content_queue ADD COLUMN platform TEXT")
+
+
+def _migrate_initiatives_context_columns(conn):
+    """Same reasoning as agents.squad above -- initiatives predates
+    `context`/`cloned_from_id` (added for Smart Copy, Shakthi_OS 3.1.1),
+    needs the same idempotent ALTER TABLE on the live DB."""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(initiatives)").fetchall()]
+    if "context" not in cols:
+        conn.execute("ALTER TABLE initiatives ADD COLUMN context TEXT")
+    if "cloned_from_id" not in cols:
+        conn.execute("ALTER TABLE initiatives ADD COLUMN cloned_from_id INTEGER REFERENCES initiatives(id)")
 
 
 def upsert_agent(conn, agent: dict):
@@ -1570,6 +1582,51 @@ def set_initiative_status(conn, initiative_id: int, status: str):
     )
 
 
+def clone_initiative(conn, source_id: int, new_title: str = None, note: str = None) -> int:
+    """Smart Copy (Shakthi_OS 3.1.1): clone an initiative as a starting
+    template for a new one. Milestones come along as a fresh (undone)
+    checklist -- the new initiative is real, unstarted work, not a copy of
+    someone else's progress. `context` carries a synthesized brief (title,
+    track, source milestone titles, founder's note) so the agent picking up
+    the new initiative has the full picture without a separate catch-up."""
+    src = conn.execute("SELECT * FROM initiatives WHERE id = ?", (source_id,)).fetchone()
+    if not src:
+        raise ValueError(f"no initiative with id {source_id}")
+    src = dict(src)
+    track = src["track"]
+    title = new_title or f"{src['title']} (copy)"
+
+    source_milestones = [
+        r["title"] for r in conn.execute(
+            "SELECT title FROM initiative_milestones WHERE initiative_id = ? ORDER BY id ASC",
+            (source_id,),
+        ).fetchall()
+    ]
+    context = json.dumps({
+        "cloned_from_id": source_id,
+        "cloned_from_title": src["title"],
+        "source_context": json.loads(src["context"]) if src.get("context") else None,
+        "milestone_template": source_milestones,
+        "note": note,
+    })
+
+    next_seq = conn.execute(
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM initiatives WHERE track = ?", (track,)
+    ).fetchone()[0]
+    cur = conn.execute(
+        "INSERT INTO initiatives (track, seq, title, artifact_url, context, cloned_from_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (track, next_seq, title, src["artifact_url"], context, source_id),
+    )
+    new_id = cur.lastrowid
+    for m_title in source_milestones:
+        conn.execute(
+            "INSERT INTO initiative_milestones (initiative_id, title, done) VALUES (?, ?, 0)",
+            (new_id, m_title),
+        )
+    return new_id
+
+
 def list_initiatives(conn, status: str = None, track: str = None) -> list:
     query, params = "SELECT * FROM initiatives", []
     clauses = []
@@ -1596,6 +1653,7 @@ def list_initiatives(conn, status: str = None, track: str = None) -> list:
         init["milestone_total"] = len(milestones)
         init["milestone_done"] = done_count
         init["percent_complete"] = round(100 * done_count / len(milestones)) if milestones else 0
+        init["context"] = json.loads(init["context"]) if init.get("context") else None
 
     return initiatives
 

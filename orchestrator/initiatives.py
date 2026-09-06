@@ -33,6 +33,12 @@ def set_status(initiative_id: int, status: str) -> dict:
         return _get(conn, initiative_id)
 
 
+def clone(source_id: int, new_title: str = None, note: str = None) -> dict:
+    with db.get_conn() as conn:
+        new_id = db.clone_initiative(conn, source_id, new_title=new_title, note=note)
+        return _get(conn, new_id)
+
+
 def list_all(status: str = None) -> list:
     with db.get_conn() as conn:
         return db.list_initiatives(conn, status=status)

@@ -23,7 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 from . import ceo as ceo_mod
-from . import config, db, finance, pa_angella, security, sentinel, website_health
+from . import config, db, finance, initiatives, pa_angella, security, sentinel, website_health
 
 ROUTES = {}
 
@@ -498,6 +498,23 @@ def initiatives_list(qs):
     status = qs.get("status", [None])[0]
     with db.get_conn() as conn:
         return {"initiatives": db.list_initiatives(conn, status=status)}
+
+
+# Smart Copy (Shakthi_OS 3.1.1) -- same GET-triggered-mutation convention as
+# /api/command-center/submit above: this framework is trusted-local-operator,
+# no auth, so a real do_POST path isn't worth adding for one endpoint yet.
+@route("/api/initiatives/smart-copy")
+def initiatives_smart_copy(qs):
+    source_id = _qs_int(qs, "id")
+    if not source_id:
+        return {"error": "missing id"}
+    title = (qs.get("title", [""])[0] or "").strip() or None
+    note = (qs.get("note", [""])[0] or "").strip() or None
+    try:
+        new_initiative = initiatives.clone(source_id, new_title=title, note=note)
+    except ValueError as e:
+        return {"error": str(e)}
+    return {"initiative": new_initiative}
 
 
 @route("/api/dhansetu/courses")
