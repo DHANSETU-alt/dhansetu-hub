@@ -2,9 +2,37 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { AngellaPresence } from "@/components/AngellaPresence";
 import { SHAKTHI_OS_VERSION } from "@/lib/version";
 import type { PaAngellaStatus } from "@/lib/api";
+
+// Mac and Linux now run identical code and (via sync_bridge.py) largely
+// identical data -- 2026-09-06, the founder opened Linux's dashboard and
+// couldn't tell it apart from Mac's own. This badge answers "which
+// machine am I looking at" at a glance, straight from this specific
+// server's own hostname -- never guessed from the URL bar.
+function MachineBadge() {
+  const [hostname, setHostname] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/machine")
+      .then((r) => r.json())
+      .then((d) => setHostname(d.hostname ?? null))
+      .catch(() => setHostname(null));
+  }, []);
+
+  if (!hostname) return null;
+  return (
+    <div
+      className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-[var(--local)] bg-[var(--local)]/10 px-2 py-0.5 text-[10px] font-mono-num text-[var(--local)]"
+      title="This dashboard is being served by this machine"
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-[var(--local)]" />
+      <span className="font-semibold">{hostname}</span>
+    </div>
+  );
+}
 
 type NavItem = { href: string; label: string; soon?: boolean };
 
@@ -86,6 +114,7 @@ export function Sidebar({ angellaStatus }: { angellaStatus?: PaAngellaStatus | n
           <span className="opacity-60">&bull;</span>
           <span className="uppercase tracking-wide">{SHAKTHI_OS_VERSION.environment}</span>
         </div>
+        <MachineBadge />
       </div>
       <AngellaPresence status={angellaStatus ?? null} />
       <div className="py-3">

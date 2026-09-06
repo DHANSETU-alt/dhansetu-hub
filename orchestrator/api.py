@@ -670,6 +670,7 @@ def health(qs):
         "allow_exec": config.ALLOW_EXEC,
         "dry_run": config.TOOLS_DRY_RUN,
         "workspaces_dir": str(config.WORKSPACES_DIR),
+        "hostname": socket.gethostname(),
     }
 
 
