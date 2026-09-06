@@ -92,6 +92,24 @@ Mac changes role from "independent instance" to "client + execution node":
 - Confirm existing test suites still pass on both machines' checked-out code after the fast-forward (`pytest`, `tsc --noEmit` per prior session's own bar for "real" — see [[project_linux_to_drive_migration_plan]]).
 - Confirm Mac's dashboard, when pointed at Linux's API, renders live Linux data (not a stale/cached local copy).
 
+## Status log (for whoever picks this up next — Codex, another Claude session, or the founder)
+
+**Done, verified, as of 2026-09-06 ~20:20 IST:**
+- Both machines enrolled in one Tailscale tailnet: Mac `100.117.111.80`, Linux (`gvc-ops-ai`) `100.86.74.97`. Confirmed reachable both directions.
+- SSH bridge live: dedicated keypair `~/.ssh/shakthi_bridge_ed25519` on the Mac, public key in `blackboxops@100.86.74.97`'s `~/.ssh/authorized_keys`. OpenSSH server installed and running on Linux (it wasn't before).
+- **Resolved a real naming confusion**: `~/ShakthiOS_v3.2` on Linux was the true 3.2 work (confirmed via its own `VERSION.txt` — "Revenue Mission Engine... Linux import based on the portable v3.1.1 snapshot taken 2026-09-03 from /Users/apple/shakthi-os"), sitting as 317 uncommitted files. `~/shakthi_os` (lowercase) on Linux is a separate, unrelated 2-commit project ("Commander v0") — not part of this line of work, left untouched.
+- Backed up before touching anything (all still on disk): Linux `~/backups/ShakthiOS_v3.2_pre_upgrade_20260906_201333.tar.gz` (422MB), Linux `~/backups/shakthi_os_pre_upgrade_20260906_201333.tar.gz` (162MB), Mac `~/shakthi_os_backups/mac_shakthi-os_pre_upgrade_20260906_201333.tar.gz` (3.5MB).
+- Committed Linux's 317-file WIP as a real commit (`39e2127`), merged into Mac's `main` (`64028d8`) — two trivial conflicts resolved (`SmartCopyButton.tsx` was byte-identical both sides; `orchestrator/api.py` import line was a strict superset on Linux's side). **Both machines are now at identical git history (`64028d8`)** — pushed Mac's merge to a side branch on Linux (`mac-3.2-merged`) since Linux's `main` was checked out, then fast-forwarded Linux's own `main` to it locally over SSH.
+- Verified for real, not just claimed: 449/449 tests pass, `tsc --noEmit` clean, dashboard + API restarted and confirmed live on Mac (`/api/health` → `db_ok: true`; `/`, `/initiatives`, `/voice` all HTTP 200).
+- Mac's own local `state/v3_1/*.db` runtime files were moved (not deleted) to `state/v3_1_mac_local_pre_merge_backup/` before the merge, since Linux's commit carried its own versions of those same paths.
+
+**NOT done yet — this is the actual remaining scope of the spec:**
+1. Mac still runs its own local `orchestrator/api.py` + dashboard (started during earlier troubleshooting, then again after the merge) — it has NOT been repointed to Linux's API yet. Mac is currently still a fully independent instance with its own `shakthi.db`, just now on the same *code* version as Linux, not the same *data*.
+2. The founder's zero-drift requirement (Goal 7) is therefore not yet met — Mac and Linux still have two separate databases that can disagree.
+3. Founder's latest instruction (2026-09-06 ~20:15 IST): **Mac = "commander"**, **Linux = "cloud PC"** — a change from the earlier confirmed answer ("Linux is control-plane, Mac contributes"). Current working interpretation (stated to the founder, not yet explicitly re-confirmed): Linux keeps holding the one real database and keeps doing the heavy execution — that's what a "cloud PC" is — while Mac becomes the lightweight terminal/interface the founder issues commands from and views status on. **Get an explicit confirmation of this reading before wiring `API_BASE`**, since it determines which machine's `shakthi.db` becomes the one kept and which gets archived.
+4. Once that's confirmed: point Mac's `API_BASE` at Linux's tailnet address (`http://100.86.74.97:8787`), archive Mac's local `shakthi.db`, stop Mac's local API/dashboard processes, add the `executor=mac` polling endpoint to `orchestrator/api.py` on Linux, and run the round-trip validation (Task 12 status check from Mac, matching Linux exactly) described earlier in this spec.
+5. The `linux-3.2` git remote is configured only on the Mac side (`blackboxops@100.86.74.97:ShakthiOS_v3.2`, via `GIT_SSH_COMMAND="ssh -i ~/.ssh/shakthi_bridge_ed25519"` since no SSH config alias exists yet) — future syncs should use this same path.
+
 ## Rollback
 
 Every step is reversible: remove the git remote, delete `shakthi_bridge_ed25519` from Mac and its entry from Linux's `authorized_keys`, un-enroll either machine from Tailscale, restore Mac's archived `shakthi.db` and repoint `API_BASE` back to `127.0.0.1:8787` to return Mac to a fully standalone instance.
