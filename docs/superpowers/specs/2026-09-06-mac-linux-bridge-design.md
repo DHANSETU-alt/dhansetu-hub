@@ -24,17 +24,24 @@ Mac's local repo currently has 5 modified files and 2 untracked paths (in-progre
 3. Mac can execute agent work (using its own local Ollama models) against Linux's shared task queue via the existing `orchestrator/routing.run_task` API — a second real execution node, not a read-only viewer.
 4. The existing `ceo.py` and `pa_angella.py` agents keep living once, on Linux, as the shared brain both machines dispatch into.
 5. Everything is additive and reversible: no destructive git operations, no data deleted, connection removable by deleting the SSH key and git remote.
+6. **Mac works as a true remote terminal from any network, not just the home LAN.** The founder must be able to check status or dispatch a command from the Mac while away from home and have it reach Linux.
+7. **Zero status drift, structurally.** Mac never computes or stores its own percent-complete/status for any initiative or task — every read (CLI, dashboard, terminal query) goes live to Linux's API. There is exactly one number for any given task's status, not two numbers that are supposed to match.
+
+**Concrete acceptance scenario (founder's own example):** founder asks on the Mac "what is Task 12's status" → answer comes from Linux's live DB. Founder says "start finishing Task 12" on the Mac → the actual work is dispatched to and executed on Linux. Mac's own status display for Task 12 updates to match Linux immediately after, because it was reading Linux's number all along, not a locally cached one.
 
 ## Non-goals
 
 - No peer-to-peer / no-master architecture (explicitly rejected by the founder in favor of Linux-as-control-plane).
 - No automatic conflict-resolution engine for divergent databases — there is deliberately only one database going forward, so this class of problem doesn't arise.
-- No public/internet-facing exposure of either machine's API — LAN-only (or LAN + Tailscale if the LAN link proves unreliable later; not needed for this pass since both machines are confirmed on the same network now).
+- No public/internet-facing exposure of either machine's API to the raw internet — reachability from any network is provided by Tailscale (a private mesh VPN, each machine gets a stable private IP reachable from anywhere once both are enrolled), not by port-forwarding Linux's API to the open internet.
 - Not building the specific revenue/"money-printing" task content in this pass — this spec is the bridge only. Once connected, task dispatch for actual goals happens through the existing `routing.run_task` flow, unchanged.
 
 ## Architecture
 
 ```
+              (both machines enrolled in one private Tailscale network --
+               reachable from any location Mac happens to be on)
+
 ┌─────────────────────────────┐         SSH (git fetch)        ┌─────────────────────────────┐
 │   Linux PC (control-plane)  │◄────────────────────────────────│   Mac (execution node)      │
 │                              │                                 │                              │
@@ -48,7 +55,8 @@ Mac's local repo currently has 5 modified files and 2 untracked paths (in-progre
 Linux is unchanged in role: it keeps running exactly what it runs today. The only new thing on Linux is one appended line in `~/.ssh/authorized_keys`.
 
 Mac changes role from "independent instance" to "client + execution node":
-- `API_BASE` (see `dashboard/lib/api.ts` and any CLI equivalent) is repointed from `http://127.0.0.1:8787` to `http://<linux-lan-ip>:8787`.
+- Both machines are enrolled in a private Tailscale network, giving Linux a stable Tailscale IP reachable from Mac on any network (home, mobile hotspot, elsewhere).
+- `API_BASE` (see `dashboard/lib/api.ts` and any CLI equivalent) is repointed from `http://127.0.0.1:8787` to `http://<linux-tailscale-ip>:8787`.
 - Mac's own `orchestrator/api.py` and dashboard dev server (started this session) are stopped — Mac no longer runs a second control plane.
 - Mac's local `shakthi.db` is renamed/archived (e.g. `shakthi.db.mac-pre-bridge-2026-09-06.bak`), not deleted, so nothing already tracked there is lost if it needs to be recovered or manually reconciled later.
 
@@ -63,12 +71,14 @@ Mac changes role from "independent instance" to "client + execution node":
 ## Setup steps (implementation-level, covered in detail by the plan)
 
 1. **Commit Mac's in-progress work first.** The 5 modified files + `SmartCopyButton.tsx` + `state/` are real in-progress work (Task/Project-track dashboard changes) and must be committed before any fetch/merge, so a fast-forward can't touch them or get blocked by them.
-2. **Generate a dedicated SSH keypair on Mac** (e.g. `~/.ssh/shakthi_bridge_ed25519`) — separate from the existing `github_shakthi_os` deploy key, since that key has a different, narrower trust scope (GitHub only).
-3. **Founder appends the new public key** to the Linux box's `~/.ssh/authorized_keys` (one command, given at execution time).
-4. **Add Linux as a git remote** on Mac (`git remote add linux ssh://<user>@<linux-ip>/path/to/shakthi-os`), `git fetch linux`, then fast-forward `main` — expected to be a clean fast-forward since Linux is confirmed to be the same history, further ahead.
-5. **Archive Mac's local `shakthi.db`**, stop Mac's local `orchestrator/api.py` and dashboard dev server.
-6. **Point Mac's config at Linux's API** (`API_BASE=http://<linux-lan-ip>:8787`), verify `/api/health` responds.
-7. **Round-trip validation**: dispatch one real low-risk task from Mac's CLI, confirm it appears in Linux's dashboard/db, confirm any result posts back correctly.
+2. **Install and enroll Tailscale on both machines**, so each gets a stable private IP reachable from any network. This replaces plain LAN IPs for every subsequent step.
+3. **Generate a dedicated SSH keypair on Mac** (e.g. `~/.ssh/shakthi_bridge_ed25519`) — separate from the existing `github_shakthi_os` deploy key, since that key has a different, narrower trust scope (GitHub only).
+4. **Founder appends the new public key** to the Linux box's `~/.ssh/authorized_keys` (one command, given at execution time).
+5. **Add Linux as a git remote** on Mac over its Tailscale address (`git remote add linux ssh://<user>@<linux-tailscale-ip>/path/to/shakthi-os`), `git fetch linux`, then fast-forward `main` — expected to be a clean fast-forward since Linux is confirmed to be the same history, further ahead.
+6. **Archive Mac's local `shakthi.db`**, stop Mac's local `orchestrator/api.py` and dashboard dev server.
+7. **Point Mac's config at Linux's API** (`API_BASE=http://<linux-tailscale-ip>:8787`), verify `/api/health` responds from Mac while off the home network (e.g. phone hotspot) to prove the "from anywhere" requirement.
+8. **Add the `executor=mac` polling endpoint** to `orchestrator/api.py` on Linux (see Data flow step 4) and a small poll loop on Mac.
+9. **Round-trip validation**: from the Mac, ask for Task 12's live status (confirm it now matches Linux exactly, not the 100%/`done` value currently cached in Mac's own soon-to-be-archived local db), dispatch one real low-risk task, confirm it appears in Linux's dashboard/db, confirm any result posts back correctly.
 
 ## Error handling / failure modes
 
@@ -84,4 +94,4 @@ Mac changes role from "independent instance" to "client + execution node":
 
 ## Rollback
 
-Every step is reversible: remove the git remote, delete `shakthi_bridge_ed25519` from Mac and its entry from Linux's `authorized_keys`, restore Mac's archived `shakthi.db` and repoint `API_BASE` back to `127.0.0.1:8787` to return Mac to a fully standalone instance.
+Every step is reversible: remove the git remote, delete `shakthi_bridge_ed25519` from Mac and its entry from Linux's `authorized_keys`, un-enroll either machine from Tailscale, restore Mac's archived `shakthi.db` and repoint `API_BASE` back to `127.0.0.1:8787` to return Mac to a fully standalone instance.
