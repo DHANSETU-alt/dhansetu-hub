@@ -1,5 +1,9 @@
 # Mac–Linux Bridge: Single Control-Plane, Two-Node Execution
 
+**Retired 2026-09-08.** Shakthi_OS is now Mac-only; `orchestrator/sync_bridge.py`
+and the tailnet/SSH wiring described below have been removed. Kept here as a
+historical record of the design.
+
 ## Context
 
 Shakthi_OS currently runs as two disconnected instances:

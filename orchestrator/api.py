@@ -17,9 +17,7 @@ for the API layer; this doesn't need one yet.
 import json
 import os
 import platform
-import shutil
 import socket
-import subprocess
 import threading
 import time
 from pathlib import Path
@@ -84,6 +82,82 @@ def overview(qs):
             "agent_count": len(db.list_agents(conn)),
             "cost_summary": db.cost_summary(conn),
         }
+
+
+@route("/api/ai-usage")
+def ai_usage(qs):
+    """Real daily AI usage for the dashboard's usage panel -- built from
+    actual cost_ledger rows, never a guessed/hard-coded number.
+
+    Cloud (Claude, this system's own API-key usage -- NOT the founder's
+    personal claude.ai/ChatGPT app subscriptions, which no API exposes to
+    a third-party dashboard): real calls/tokens/cost today, checked
+    against an optional founder-set daily budget.
+
+    ChatGPT: Shakthi_OS has no OpenAI integration at all (model_gateway.py
+    only talks to Ollama and Anthropic) -- reported as not-integrated
+    rather than a fabricated zero that implies a real, checked absence of
+    usage.
+
+    Local (Ollama): real calls/tokens today, plus an ESTIMATED remaining
+    capacity for the rest of today, computed from the actual observed
+    average seconds-per-call in the last 24h x the configured assumed
+    operating hours. Local has no real limit -- this is a labeled
+    estimate, not a quota.
+    """
+    from datetime import datetime, timezone
+
+    today_start = datetime.now(timezone.utc).strftime("%Y-%m-%d 00:00:00")
+
+    with db.get_conn() as conn:
+        today_summary = {row["provider"]: row for row in db.cost_summary(conn, since=today_start)}
+        intervals = db.local_call_intervals_seconds(conn, since=today_start, provider="ollama")
+
+    claude_today = today_summary.get("claude", {"calls": 0, "tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0})
+    ollama_today = today_summary.get("ollama", {"calls": 0, "tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0})
+
+    budget = config.CLOUD_DAILY_BUDGET_USD or None
+    spent = claude_today.get("cost_usd") or 0.0
+    cloud = {
+        "provider": "claude",
+        "configured": bool(config.ANTHROPIC_API_KEY),
+        "calls_today": claude_today.get("calls") or 0,
+        "tokens_in_today": claude_today.get("tokens_in") or 0,
+        "tokens_out_today": claude_today.get("tokens_out") or 0,
+        "cost_usd_today": round(spent, 4),
+        "daily_budget_usd": budget,
+        "budget_remaining_usd": round(budget - spent, 4) if budget else None,
+        "note": None if config.ANTHROPIC_API_KEY else "ANTHROPIC_API_KEY not set -- cloud escalation is currently unavailable, real usage today is 0.",
+    }
+
+    chatgpt = {
+        "integrated": False,
+        "note": "Shakthi_OS has no OpenAI/ChatGPT integration -- nothing real to report, not a checked zero.",
+    }
+
+    avg_interval = round(sum(intervals) / len(intervals), 1) if intervals else None
+    remaining_seconds_today = None
+    estimated_remaining_calls = None
+    if avg_interval and avg_interval > 0:
+        remaining_seconds_today = max(config.LOCAL_OPERATING_HOURS_PER_DAY * 3600 - sum(intervals), 0)
+        estimated_remaining_calls = int(remaining_seconds_today // avg_interval)
+
+    local = {
+        "provider": "ollama",
+        "calls_today": ollama_today.get("calls") or 0,
+        "tokens_in_today": ollama_today.get("tokens_in") or 0,
+        "tokens_out_today": ollama_today.get("tokens_out") or 0,
+        "limit": "unlimited (local hardware, no provider quota)",
+        "avg_seconds_per_call_observed_today": avg_interval,
+        "assumed_operating_hours_per_day": config.LOCAL_OPERATING_HOURS_PER_DAY,
+        "estimated_remaining_calls_today": estimated_remaining_calls,
+        "calculation_basis": (
+            f"avg gap between {len(intervals) + 1} real calls today x remaining assumed hours"
+            if avg_interval else "not enough calls today yet to estimate (need 2+)"
+        ),
+    }
+
+    return {"date": today_start[:10], "cloud": cloud, "chatgpt": chatgpt, "local": local}
 
 
 @route("/api/agents")
@@ -674,36 +748,20 @@ def health(qs):
     }
 
 
-@route("/api/linux/runtime")
-def linux_runtime(qs):
-    """Current, read-only Linux host facts for the executive dashboard.
+@route("/api/mac/runtime")
+def mac_runtime(qs):
+    """Current, read-only Mac host facts for the executive dashboard.
 
-    Values are sampled on request and are never inferred from old Mac data or
-    a decorative animation. GPU state remains explicit when the installed
-    NVIDIA utility cannot communicate with its kernel driver.
+    Values are sampled on request and are never inferred from stale data or
+    a decorative animation. GPU state remains explicit when no GPU utility
+    can be found.
     """
     vm = psutil.virtual_memory()
     disk = psutil.disk_usage(str(Path.home()))
     battery = psutil.sensors_battery()
     cpu_name = platform.processor() or platform.machine()
-    try:
-        for line in Path("/proc/cpuinfo").read_text(encoding="utf-8", errors="ignore").splitlines():
-            if line.startswith("model name"):
-                cpu_name = line.split(":", 1)[1].strip()
-                break
-    except OSError:
-        pass
 
-    gpu = {"state": "UNAVAILABLE", "name": None, "reason": "nvidia-smi is not installed"}
-    if shutil.which("nvidia-smi"):
-        try:
-            output = subprocess.run(
-                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
-                capture_output=True, text=True, timeout=3, check=True,
-            ).stdout.strip()
-            gpu = {"state": "CONNECTED", "name": output or "NVIDIA GPU", "reason": None}
-        except (OSError, subprocess.SubprocessError):
-            gpu = {"state": "DRIVER_ERROR", "name": None, "reason": "nvidia-smi cannot communicate with the NVIDIA driver"}
+    gpu = {"state": "UNAVAILABLE", "name": None, "reason": "no GPU utility found on this Mac"}
 
     return {
         "source": "LIVE_LOCAL_SAMPLE",

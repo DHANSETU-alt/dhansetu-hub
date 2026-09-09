@@ -7,11 +7,10 @@ import { AngellaPresence } from "@/components/AngellaPresence";
 import { SHAKTHI_OS_VERSION } from "@/lib/version";
 import type { PaAngellaStatus } from "@/lib/api";
 
-// Mac and Linux now run identical code and (via sync_bridge.py) largely
-// identical data -- 2026-09-06, the founder opened Linux's dashboard and
-// couldn't tell it apart from Mac's own. This badge answers "which
-// machine am I looking at" at a glance, straight from this specific
-// server's own hostname -- never guessed from the URL bar.
+// Shakthi_OS is Mac-only as of 2026-09-08 -- the Mac<->Linux double-brain
+// bridge (sync_bridge.py) was retired. This badge answers "which machine
+// am I looking at" at a glance, straight from this specific server's own
+// hostname -- never guessed from the URL bar.
 function MachineBadge() {
   const [hostname, setHostname] = useState<string | null>(null);
 
@@ -44,6 +43,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { href: "/command-center", label: "Founder Command Center" },
       { href: "/initiatives", label: "Founder Tasks" },
       { href: "/mission-control", label: "Mission Control" },
+      { href: "/org-chart", label: "Org Chart" },
       { href: "/connections", label: "Connections & readiness" },
     ],
   },

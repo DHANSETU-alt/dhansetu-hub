@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import access, alerts, audit, bug_fixer, buddy, ceo, chrome_developer, config, correction_bot, customer_success, db, dhansetu_ai, failure_analysis, finance, founder_review, incident_manager, incident_scheduler, initiatives, knowledge, team_register, load_manager, marketing, market_data, onboarding, pa_angella, payment_certification, payment_gateway_manager, payments, pdf_studio, peopledesk, pricing, prompt_engine, registry, routing, sales, security, sentinel, sheets, sitegen, skill_test, template_registry, trading_engine, voice, voice_history, watchdog, website_audit, website_builder, worker_pool
+from . import access, alerts, audit, bug_fixer, buddy, ceo, chrome_developer, config, correction_bot, customer_success, db, dhansetu_ai, failure_analysis, finance, founder_review, incident_manager, incident_scheduler, initiatives, knowledge, team_register, load_manager, marketing, market_data, onboarding, pa_angella, payment_certification, payment_gateway_manager, payments, pdf_studio, peopledesk, pricing, prompt_engine, registry, routing, sales, security, sentinel, sheets, sitegen, skill_test, support_bot, template_registry, trading_engine, voice, voice_history, watchdog, website_audit, website_builder, worker_pool
 from . import telegram as tg
 from . import telegram_service as ts
 from .tools.registry import TOOL_REGISTRY
@@ -898,15 +898,129 @@ def _cmd_subscribe(email, product, gateway, razorpay_key_id, razorpay_key_secret
     print(json.dumps(result, default=str))
 
 
+def _cmd_create_razorpay_order(razorpay_key_id, razorpay_key_secret, amount_inr, receipt, description, product=None):
+    if not (razorpay_key_id and razorpay_key_secret):
+        print(json.dumps({"error": "--create-razorpay-order requires --razorpay-key-id and --razorpay-key-secret"}))
+        return
+    if not (amount_inr and receipt):
+        print(json.dumps({"error": "--create-razorpay-order requires --amount-inr and --receipt"}))
+        return
+    # Real gap found and closed same session: this Orders/Checkout.js path
+    # is the actual live checkout customers use (default gateway as of
+    # tonight), but it takes a raw amount/receipt with no idea a product
+    # like blackboxops_os_starter has a hard 300-customer cap -- that cap
+    # lived only in pricing.py's OLDER Payment-Links path, which nothing
+    # calls anymore on the real pricing page. Checked here too, same
+    # source of truth (pricing.PRODUCT_PRICING + db.count_active_subscriptions),
+    # not a second, drifting copy of the limit.
+    if product:
+        if product not in pricing.PRODUCT_PRICING:
+            print(json.dumps({"error": f"unknown product '{product}'"}))
+            return
+        product_pricing = pricing.PRODUCT_PRICING[product]
+        max_customers = product_pricing.get("max_customers")
+        if max_customers is not None:
+            with db.get_conn() as conn:
+                already_sold = db.count_paid_transactions_for_product(conn, product)
+            if already_sold >= max_customers:
+                print(json.dumps({
+                    "error": f"'{product_pricing['label']}' is sold out -- all {max_customers} spots "
+                             f"at this price are taken ({already_sold} confirmed).",
+                    "sold_out": True,
+                }))
+                return
+    try:
+        order = payment_gateway_manager.create_razorpay_order(razorpay_key_id, razorpay_key_secret, amount_inr, receipt)
+    except payment_gateway_manager.PaymentGatewayError as e:
+        print(json.dumps({"error": str(e)}))
+        return
+    with db.get_conn() as conn:
+        db.insert_payment_transaction(
+            # description = the exact product id when known (never the
+            # receipt string) -- count_paid_transactions_for_product's
+            # exact match depends on this being clean, not a timestamped
+            # receipt like "blackboxops_os_starter_1735689600000".
+            conn, gateway="razorpay_order", gateway_ref=order["order_id"], amount=amount_inr,
+            currency="INR", description=product or description or receipt, status="created",
+        )
+    print(json.dumps(order, default=str))
+
+
+def _cmd_process_razorpay_webhook(webhook_secret, raw_body, signature):
+    if not (webhook_secret and raw_body and signature):
+        print(json.dumps({"error": "--process-razorpay-webhook requires --webhook-secret, --raw-body, --razorpay-signature"}))
+        return
+    body_bytes = raw_body.encode()
+    if not payment_gateway_manager.verify_razorpay_webhook_signature(body_bytes, signature, webhook_secret):
+        # Fail loud and specific -- a webhook with a bad signature is
+        # either a real attacker or a misconfigured secret, never
+        # something to silently accept as if it were verified.
+        print(json.dumps({"error": "webhook signature verification failed -- not processed", "verified": False}))
+        return
+
+    try:
+        event = json.loads(raw_body)
+    except json.JSONDecodeError as e:
+        print(json.dumps({"error": f"signature verified but body is not valid JSON: {e}", "verified": True}))
+        return
+
+    event_type = event.get("event", "")
+    payment_entity = event.get("payload", {}).get("payment", {}).get("entity", {})
+    order_id = payment_entity.get("order_id")
+    payment_id = payment_entity.get("id")
+
+    # Razorpay retries webhooks that don't get a 200 -- idempotent by
+    # design (same event can arrive more than once), so this only ever
+    # updates status, never inserts a duplicate row. A webhook for an
+    # order this system never created (e.g. a stray/test event) is
+    # reported, not silently dropped, so it doesn't look like it worked.
+    STATUS_BY_EVENT = {
+        "payment.captured": "paid", "order.paid": "paid",
+        "payment.failed": "failed",
+    }
+    result = {"verified": True, "event": event_type, "order_id": order_id, "payment_id": payment_id}
+    if not order_id:
+        result["error"] = "webhook verified but payload had no order_id to match against"
+        print(json.dumps(result))
+        return
+    new_status = STATUS_BY_EVENT.get(event_type)
+    if new_status is None:
+        result["note"] = f"event type {event_type!r} verified but not one this handler acts on -- ignored, not an error"
+        print(json.dumps(result))
+        return
+
+    with db.get_conn() as conn:
+        existing = db.get_payment_transaction(conn, order_id)
+        if existing is None:
+            result["error"] = f"no local payment_transactions row for order_id {order_id!r} -- nothing to update"
+            print(json.dumps(result))
+            return
+        db.update_payment_transaction_status(conn, order_id, new_status)
+    result["updated_status"] = new_status
+    print(json.dumps(result))
+
+
+def _cmd_verify_razorpay_payment(razorpay_key_secret, order_id, payment_id, signature):
+    if not (razorpay_key_secret and order_id and payment_id and signature):
+        print(json.dumps({"error": "--verify-razorpay-payment requires --razorpay-key-secret, --order-id, --payment-id, --razorpay-signature"}))
+        return
+    ok = payment_gateway_manager.verify_razorpay_checkout_signature(razorpay_key_secret, order_id, payment_id, signature)
+    with db.get_conn() as conn:
+        db.update_payment_transaction_status(conn, order_id, "paid" if ok else "failed")
+        txn = db.get_payment_transaction(conn, order_id)
+    print(json.dumps({"verified": ok, "transaction": txn}, default=str))
+
+
 def _cmd_initiative_add(title, artifact_url, track="task"):
     result = initiatives.add_initiative(title, artifact_url=artifact_url, track=track)
-    label = "Task" if track == "task" else "Project"
+    label = "Task" if track == "task" else "OS" if track == "os" else "Project"
     print(f"{label} {result['seq']} (#{result['id']}): {title}")
 
 
 def _cmd_milestone_add(initiative_id, title, done):
     result = initiatives.add_milestone(initiative_id, title, done=done)
-    print(f"Milestone added to Task {result['seq']} -- now {result['percent_complete']}% "
+    label = "Task" if result["track"] == "task" else "OS" if result["track"] == "os" else "Project"
+    print(f"Milestone added to {label} {result['seq']} -- now {result['percent_complete']}% "
           f"({result['milestone_done']}/{result['milestone_total']})")
 
 
@@ -917,7 +1031,8 @@ def _cmd_milestone_done(milestone_id):
 
 def _cmd_initiative_status(initiative_id, status):
     result = initiatives.set_status(initiative_id, status)
-    print(f"Task {result['seq']} status -> {result['status']}")
+    label = "Task" if result["track"] == "task" else "OS" if result["track"] == "os" else "Project"
+    print(f"{label} {result['seq']} status -> {result['status']}")
 
 
 def _cmd_initiatives_list():
@@ -1035,6 +1150,14 @@ def _cmd_trading_price(symbol):
 def _cmd_chat_message(agent_id, message):
     result = routing.run_task(agent_id, message)
     print(json.dumps({"task_id": result["task_id"], "reply": result["output"]}, default=str))
+
+
+def _cmd_support_bot_ask(message, email, name, business_id, telegram_token, telegram_chat_id):
+    result = support_bot.handle_message(
+        message, business_id=business_id, email=email, name=name,
+        telegram_token=telegram_token, telegram_chat_id=telegram_chat_id,
+    )
+    print(json.dumps(result, default=str))
 
 
 def _cmd_knowledge_add(category, title, content, tags):
@@ -1327,6 +1450,16 @@ def main():
     parser.add_argument("--website-urls", default=None, help="comma-separated URLs for --incident-sweep to check")
 
     parser.add_argument("--subscribe", action="store_true", help="Create a subscription payment. Requires --email, --product, --gateway")
+    parser.add_argument("--create-razorpay-order", action="store_true", help="Create a real fixed-price Razorpay Order for on-page Checkout.js (not a Payment Link). Requires --razorpay-key-id, --razorpay-key-secret, --amount-inr, --receipt. Optional --product enforces that product's PRODUCT_PRICING cap (e.g. first-300)")
+    parser.add_argument("--verify-razorpay-payment", action="store_true", help="Verify a Razorpay Checkout.js success callback's signature. Requires --razorpay-key-secret, --order-id, --payment-id, --razorpay-signature")
+    parser.add_argument("--process-razorpay-webhook", action="store_true", help="Verify + process a real Razorpay webhook event. Requires --webhook-secret, --raw-body, --razorpay-signature")
+    parser.add_argument("--webhook-secret", default=None, help="Razorpay Webhook Secret (set in the Razorpay dashboard) -- distinct from the API Key Secret, never store or log it")
+    parser.add_argument("--raw-body", default=None, help="The exact raw request body Razorpay sent, unmodified -- the signature covers these exact bytes")
+    parser.add_argument("--amount-inr", type=float, default=None)
+    parser.add_argument("--receipt", default=None)
+    parser.add_argument("--order-id", default=None)
+    parser.add_argument("--payment-id", default=None)
+    parser.add_argument("--razorpay-signature", default=None)
     parser.add_argument("--pricing-check", action="store_true", help="Check free-tier/subscription access. Requires --email, --product")
     parser.add_argument("--pricing-record-usage", action="store_true", help="Record one use after an allowed pricing check. Requires --email, --product")
     parser.add_argument("--email", default=None)
@@ -1436,6 +1569,10 @@ def main():
 
     parser.add_argument("--chat-message", metavar="MESSAGE", help="Pre-sales chat widget: one message, one reply, clean JSON")
     parser.add_argument("--chat-agent", default="sales", help="Agent id to answer --chat-message (default: sales)")
+    parser.add_argument("--support-bot-ask", metavar="MESSAGE", help="Customer-facing support bot: knowledge-base answer, or lead capture if unmatched + --support-email given")
+    parser.add_argument("--support-email", default=None)
+    parser.add_argument("--support-name", default=None)
+    parser.add_argument("--support-business-id", type=int, default=None)
 
     parser.add_argument("--peopledesk-add-staff", action="store_true")
     parser.add_argument("--peopledesk-list-staff", action="store_true")
@@ -1714,6 +1851,12 @@ def _dispatch(args):
             return
         return _cmd_subscribe(args.email, args.product, args.gateway, args.razorpay_key_id, args.razorpay_key_secret,
                                args.payu_merchant_key, args.payu_merchant_salt, args.success_url, args.failure_url)
+    if args.create_razorpay_order:
+        return _cmd_create_razorpay_order(args.razorpay_key_id, args.razorpay_key_secret, args.amount_inr, args.receipt, None, product=args.product)
+    if args.verify_razorpay_payment:
+        return _cmd_verify_razorpay_payment(args.razorpay_key_secret, args.order_id, args.payment_id, args.razorpay_signature)
+    if args.process_razorpay_webhook:
+        return _cmd_process_razorpay_webhook(args.webhook_secret, args.raw_body, args.razorpay_signature)
     if args.pricing_check:
         if not (args.email and args.product):
             print(json.dumps({"error": "--pricing-check requires --email and --product"}))
@@ -1830,6 +1973,9 @@ def _dispatch(args):
         return _cmd_failure_analyses_list(args.failure_status)
     if args.chat_message:
         return _cmd_chat_message(args.chat_agent, args.chat_message)
+    if args.support_bot_ask:
+        return _cmd_support_bot_ask(args.support_bot_ask, args.support_email, args.support_name,
+                                     args.support_business_id, args.telegram_token, args.telegram_chat_id)
 
     if args.strategy_add:
         if not (args.strategy_name and args.strategy_symbol and args.strategy_rule_type and args.strategy_params):

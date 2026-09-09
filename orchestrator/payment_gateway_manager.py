@@ -16,6 +16,7 @@ Subscriptions API v1); treat the first real call as the verification
 step, same as every other integration in this project.
 """
 import hashlib
+import hmac
 import re
 import urllib.error
 import urllib.parse
@@ -125,6 +126,73 @@ def check_stripe_session_status(secret_key: str, session_id: str) -> dict:
 def check_razorpay_subscription_status(key_id: str, key_secret: str, subscription_id: str) -> dict:
     result = razorpay_links._call("GET", f"{RAZORPAY_SUBSCRIPTIONS_BASE}/subscriptions/{subscription_id}", key_id, key_secret)
     return {"subscription_id": result["id"], "status": result["status"]}
+
+
+# --- Razorpay Orders + Checkout.js -- a real fixed-price, on-page checkout,
+# NOT a Payment Link. The founder's own real, repeated complaint about the
+# Payment Links flow above: it hands the customer a URL to open separately
+# (or the founder a link to paste/share) instead of a "Pay Now" button that
+# takes their card/UPI right on the page. This is the standard Razorpay
+# pattern for that: the server creates an Order for an exact amount, the
+# browser opens Razorpay's own Checkout modal against that order_id (via
+# checkout.js, loaded client-side -- not built here, that's the frontend's
+# job), and the resulting payment is tied to that one order, one amount,
+# no separate link ever generated or shared. NOT verified against a live
+# Razorpay account -- same honest caveat as every other gateway function in
+# this file; the Orders API and the checkout signature formula below are
+# both Razorpay's own documented v1 behavior.
+def create_razorpay_order(key_id: str, key_secret: str, amount_inr: float, receipt: str,
+                           notes: dict = None) -> dict:
+    if amount_inr <= 0:
+        raise PaymentGatewayError(f"amount_inr must be positive, got {amount_inr}")
+    body = {
+        "amount": int(round(amount_inr * 100)),  # Razorpay amounts are in paise, always an integer
+        "currency": "INR",
+        "receipt": receipt,
+        "notes": notes or {},
+    }
+    try:
+        result = razorpay_links._call("POST", f"{RAZORPAY_SUBSCRIPTIONS_BASE}/orders", key_id, key_secret, body=body)
+    except razorpay_links.RazorpayError as e:
+        # Same real bug this project already fixed once for the Payment
+        # Links path (create_razorpay_payment_link above): _call() raises
+        # payments.RazorpayError, not this module's PaymentGatewayError --
+        # left uncaught, that's a raw traceback (file paths included)
+        # leaking straight into an API response instead of a clean error.
+        # Confirmed live: a bad test key here produced exactly that until
+        # this except was added.
+        raise PaymentGatewayError(str(e)) from e
+    return {"order_id": result["id"], "amount": result["amount"], "currency": result["currency"], "raw": result}
+
+
+def verify_razorpay_webhook_signature(raw_body: bytes, signature: str, webhook_secret: str) -> bool:
+    """Real gap this project's own comments flagged and left open (see
+    payments.py's module docstring: 'No webhook receiver -- this system
+    is localhost-only by design... payment status is checked on demand').
+    A webhook is the SERVER-TO-SERVER confirmation that a payment
+    actually completed -- distinct from verify_razorpay_checkout_signature
+    above, which only covers the customer's browser telling us checkout
+    finished (real, but a browser can go offline/crash before that call
+    lands; the webhook is Razorpay's own authoritative, retried-until-
+    acked notification). Razorpay's documented formula: HMAC-SHA256 of
+    the RAW request body (not a re-serialized/re-parsed version -- even a
+    single whitespace difference breaks the signature) using a separate
+    Webhook Secret configured in the Razorpay dashboard, never the same
+    value as the API Key Secret."""
+    expected = hmac.new(webhook_secret.encode(), raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
+def verify_razorpay_checkout_signature(key_secret: str, order_id: str, payment_id: str, signature: str) -> bool:
+    """Real security requirement, not optional: Checkout.js's success
+    callback runs entirely in the customer's browser, so it must never be
+    trusted on its own -- a tampered client could claim success for an
+    unpaid order. Razorpay's own documented formula: HMAC-SHA256 of
+    "order_id|payment_id" using the merchant's key_secret must match the
+    signature Razorpay's server actually sent back."""
+    payload = f"{order_id}|{payment_id}".encode()
+    expected = hmac.new(key_secret.encode(), payload, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
 
 
 # --- PayU (India) -- hash-signed form POST, not a REST API ----------------

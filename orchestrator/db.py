@@ -185,6 +185,24 @@ def cost_summary(conn, since: str | None = None):
     return [dict(r) for r in rows]
 
 
+def local_call_intervals_seconds(conn, since: str, provider: str = "ollama") -> list[float]:
+    """Real inter-call gaps (seconds) between consecutive cost_ledger rows
+    for one provider since a given timestamp. Used to estimate local model
+    throughput from actual observed timing, not a guessed number -- callers
+    turn this into an average themselves so they can decide what counts as
+    "not enough data yet" for their own purposes."""
+    rows = conn.execute(
+        "SELECT created_at FROM cost_ledger WHERE provider = ? AND created_at >= ? ORDER BY created_at",
+        (provider, since),
+    ).fetchall()
+    timestamps = [r["created_at"] for r in rows]
+    if len(timestamps) < 2:
+        return []
+    from datetime import datetime as _dt
+    parsed = [_dt.strptime(t, "%Y-%m-%d %H:%M:%S") for t in timestamps]
+    return [(b - a).total_seconds() for a, b in zip(parsed, parsed[1:]) if (b - a).total_seconds() > 0]
+
+
 # --- Phase 0.2: tool calls ------------------------------------------------
 
 def log_tool_call(conn, task_id: int, agent_id: str, business_id, tool_name: str,
@@ -803,6 +821,18 @@ def insert_payment_transaction(conn, gateway: str, gateway_ref: str, amount: flo
     return cur.lastrowid
 
 
+def update_payment_transaction_status(conn, gateway_ref: str, status: str):
+    conn.execute(
+        "UPDATE payment_transactions SET status = ? WHERE gateway_ref = ?",
+        (status, gateway_ref),
+    )
+
+
+def get_payment_transaction(conn, gateway_ref: str):
+    row = conn.execute("SELECT * FROM payment_transactions WHERE gateway_ref = ?", (gateway_ref,)).fetchone()
+    return dict(row) if row else None
+
+
 def list_payment_transactions(conn, gateway: str = None, limit: int = 50):
     if gateway:
         rows = conn.execute(
@@ -991,12 +1021,50 @@ def increment_usage(conn, email: str, product: str) -> int:
 
 
 def get_active_subscription(conn, email: str, product: str):
+    # valid_until IS NULL means a one-time/lifetime purchase that never
+    # expires (see pricing.py's is_one_time products) -- NULL comparisons
+    # in SQL are never true, so "valid_until >= datetime('now')" alone
+    # would silently treat every lifetime customer as having no active
+    # subscription. Purely additive: every pre-existing product always
+    # sets a real valid_until date, never NULL, so this changes nothing
+    # for them.
     row = conn.execute(
         "SELECT * FROM product_subscriptions WHERE email = ? AND product = ? AND status = 'active' "
-        "AND valid_until >= datetime('now') ORDER BY id DESC LIMIT 1",
+        "AND (valid_until IS NULL OR valid_until >= datetime('now')) ORDER BY id DESC LIMIT 1",
         (email, product),
     ).fetchone()
     return dict(row) if row else None
+
+
+def count_paid_transactions_for_product(conn, product: str) -> int:
+    """Real count of completed payments for a product going through the
+    Razorpay Orders/Checkout.js flow (payment_transactions table) --
+    distinct from count_active_subscriptions below, which covers the
+    OLDER Payment-Links flow's separate product_subscriptions table.
+    Two different tables because two payment flows were built at
+    different times against different schemas; unifying them is a real
+    follow-up, not done here. Matches on the exact product id stored in
+    `description` at order-creation time (see
+    cli.py's _cmd_create_razorpay_order) -- never a prefix/LIKE match,
+    which could double-count or miss rows depending on what a receipt
+    string happens to contain."""
+    row = conn.execute(
+        "SELECT COUNT(*) AS c FROM payment_transactions WHERE description = ? AND status = 'paid'",
+        (product,),
+    ).fetchone()
+    return row["c"]
+
+
+def count_active_subscriptions(conn, product: str) -> int:
+    """Real count of customers who've actually completed payment for a
+    product -- used to enforce a hard cap (e.g. 'first 300 customers').
+    Counts 'active' status only, never 'pending' -- an unpaid/abandoned
+    checkout must never occupy a slot."""
+    row = conn.execute(
+        "SELECT COUNT(*) AS c FROM product_subscriptions WHERE product = ? AND status = 'active'",
+        (product,),
+    ).fetchone()
+    return row["c"]
 
 
 def insert_subscription(conn, email: str, product: str, amount_inr: float, gateway: str, gateway_ref: str = None,

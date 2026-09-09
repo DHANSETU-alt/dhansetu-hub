@@ -32,8 +32,16 @@ def _parse_decision(text: str) -> dict:
     return data
 
 
-def decide(goal: str, business_id: int | None = None) -> dict:
-    result = routing.run_task("ceo", goal, business_id=business_id)
+def decide(goal: str, business_id: int | None = None, agent_id: str = "ceo") -> dict:
+    """agent_id defaults to 'ceo' (Team 1) -- every existing caller keeps
+    working unchanged. Real gap found + fixed 2026-09-09: this was
+    hardcoded to "ceo" literally, which made Team 2's ceo_2 (created same
+    session) unreachable through any real code path -- present in the
+    registry as data, but nothing could ever actually dispatch to it.
+    Root cause (5-Why/KPIV, per founder's own requested method): the
+    entry point had the target agent baked in as a literal instead of a
+    parameter. Pass agent_id='ceo_2' to route to Team 2 instead."""
+    result = routing.run_task(agent_id, goal, business_id=business_id)
 
     try:
         parsed = _parse_decision(result["output"])

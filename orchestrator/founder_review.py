@@ -88,6 +88,31 @@ def counter_solution_plan(data: dict) -> str:
     return text.strip()
 
 
+def format_angella_push(data: dict, plan: str) -> str:
+    """Real Angella push, 2026-09-06: same real compiled data as
+    format_report(), but the counter-solution comes from PA Angella's own
+    role (pa_angella.push_pending_work) instead of a generic CEO summary,
+    in Gujarati, as arrow-chained flow steps per pending item -- the
+    founder's own explicit ask ("push me pending tasks... every hour...
+    with solution... flow chart mode"). The flow chains render as literal
+    text arrows inside a monospace block, which is what Telegram can
+    actually display without a new image-rendering dependency."""
+    from . import telegram as tg
+    esc = tg.escape_markdown_v2
+
+    security_line = f"{data['security_score']}" if data["security_score"] is not None else "no scan"
+    watchdog_line = f"{data['watchdog_critical']} critical, {data['watchdog_warning']} warning"
+
+    lines = [f"🤖 *ANGELLA* — {esc(data['timestamp'])}", ""]
+    lines.append(f"*Governor:* {esc(data['governor_status'])}  \\|  *Security:* {esc(security_line)}")
+    lines.append(f"*Watchdog:* {esc(watchdog_line)}")
+    lines.append("")
+    lines.append("```")
+    lines.append(plan)
+    lines.append("```")
+    return "\n".join(lines)
+
+
 def format_report(data: dict, plan: str) -> str:
     # MarkdownV2: every *bold* marker below is a literal static string this
     # function writes -- safe, unescaped. Every interpolated value is real
@@ -134,10 +159,11 @@ def format_report(data: dict, plan: str) -> str:
 def run_founder_review(token: str, chat_id: str) -> dict:
     from . import telegram as tg
     from . import telegram_service as ts
+    from . import pa_angella
 
     data = compile_review_data()
-    plan = counter_solution_plan(data)
-    report_text = format_report(data, plan)
+    plan = pa_angella.push_pending_work(data)
+    report_text = format_angella_push(data, plan)
 
     result = {"report_text": report_text, "telegram_sent": False}
     try:

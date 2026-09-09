@@ -93,6 +93,132 @@ class TestRazorpaySubscriptions(unittest.TestCase):
         self.assertEqual(result["status"], "created")
 
 
+class TestRazorpayOrders(unittest.TestCase):
+    """Orders + Checkout.js -- the real fixed-price, on-page flow, distinct
+    from Payment Links (TestRazorpaySubscriptions above uses a different,
+    also real, endpoint)."""
+
+    def test_create_order_converts_rupees_to_paise(self):
+        captured = {}
+
+        def fake_call(method, url, key_id, key_secret, body=None, timeout=15):
+            captured["body"] = body
+            captured["url"] = url
+            captured["method"] = method
+            return {"id": "order_abc123", "amount": 699900, "currency": "INR"}
+
+        with patch.object(razorpay_links, "_call", fake_call):
+            result = pgm.create_razorpay_order("key", "secret", 6999.0, "receipt_starter_001")
+
+        self.assertEqual(captured["method"], "POST")
+        self.assertTrue(captured["url"].endswith("/orders"))
+        self.assertEqual(captured["body"]["amount"], 699900)
+        self.assertEqual(captured["body"]["currency"], "INR")
+        self.assertEqual(captured["body"]["receipt"], "receipt_starter_001")
+        self.assertEqual(result["order_id"], "order_abc123")
+
+    def test_zero_amount_rejected(self):
+        with self.assertRaises(pgm.PaymentGatewayError):
+            pgm.create_razorpay_order("key", "secret", 0, "receipt_1")
+
+    def test_negative_amount_rejected(self):
+        with self.assertRaises(pgm.PaymentGatewayError):
+            pgm.create_razorpay_order("key", "secret", -100, "receipt_1")
+
+    def test_gateway_http_error_wrapped_as_payment_gateway_error(self):
+        # Real bug found live-testing this against the actual Razorpay API
+        # with a bad test key: an uncaught razorpay_links.RazorpayError
+        # (raised by _call on any HTTP error) leaked a full traceback
+        # straight into the API response instead of a clean error message.
+        def fake_call_raises(method, url, key_id, key_secret, body=None, timeout=15):
+            raise razorpay_links.RazorpayError("Razorpay API error 401: Authentication failed")
+
+        with patch.object(razorpay_links, "_call", fake_call_raises):
+            with self.assertRaises(pgm.PaymentGatewayError):
+                pgm.create_razorpay_order("bad_key", "bad_secret", 100.0, "receipt_1")
+
+    def test_notes_default_to_empty_dict(self):
+        captured = {}
+
+        def fake_call(method, url, key_id, key_secret, body=None, timeout=15):
+            captured["body"] = body
+            return {"id": "order_x", "amount": 100, "currency": "INR"}
+
+        with patch.object(razorpay_links, "_call", fake_call):
+            pgm.create_razorpay_order("key", "secret", 1.0, "receipt_1")
+
+        self.assertEqual(captured["body"]["notes"], {})
+
+
+class TestVerifyRazorpayCheckoutSignature(unittest.TestCase):
+    def test_valid_signature_verifies(self):
+        import hmac as _hmac
+
+        secret = "test_key_secret"
+        order_id, payment_id = "order_abc123", "pay_xyz789"
+        real_signature = _hmac.new(secret.encode(), f"{order_id}|{payment_id}".encode(), hashlib.sha256).hexdigest()
+
+        self.assertTrue(pgm.verify_razorpay_checkout_signature(secret, order_id, payment_id, real_signature))
+
+    def test_tampered_signature_rejected(self):
+        self.assertFalse(pgm.verify_razorpay_checkout_signature("secret", "order_1", "pay_1", "not_a_real_signature"))
+
+    def test_wrong_secret_rejected(self):
+        import hmac as _hmac
+
+        order_id, payment_id = "order_abc123", "pay_xyz789"
+        signed_with_wrong_secret = _hmac.new(b"wrong_secret", f"{order_id}|{payment_id}".encode(), hashlib.sha256).hexdigest()
+
+        self.assertFalse(pgm.verify_razorpay_checkout_signature("real_secret", order_id, payment_id, signed_with_wrong_secret))
+
+    def test_signature_for_different_order_rejected(self):
+        import hmac as _hmac
+
+        secret = "test_key_secret"
+        signature_for_order_1 = _hmac.new(secret.encode(), b"order_1|pay_1", hashlib.sha256).hexdigest()
+
+        # Same signature, claimed against a different order_id -- must not verify
+        self.assertFalse(pgm.verify_razorpay_checkout_signature(secret, "order_2", "pay_1", signature_for_order_1))
+
+
+class TestVerifyRazorpayWebhookSignature(unittest.TestCase):
+    """Real gap this project's own comments flagged as missing (see
+    payments.py's docstring). Distinct from the checkout-signature tests
+    above: this covers Razorpay's authoritative server-to-server webhook,
+    not the browser's own success callback."""
+
+    def test_valid_signature_verifies(self):
+        import hmac as _hmac
+
+        secret = "whsec_test_123"
+        body = b'{"event":"payment.captured","payload":{"payment":{"entity":{"id":"pay_1","order_id":"order_1"}}}}'
+        real_signature = _hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+
+        self.assertTrue(pgm.verify_razorpay_webhook_signature(body, real_signature, secret))
+
+    def test_tampered_body_rejected(self):
+        import hmac as _hmac
+
+        secret = "whsec_test_123"
+        original_body = b'{"event":"payment.captured","payload":{"payment":{"entity":{"id":"pay_1","order_id":"order_1"}}}}'
+        signature = _hmac.new(secret.encode(), original_body, hashlib.sha256).hexdigest()
+        tampered_body = original_body.replace(b"order_1", b"order_2")
+
+        self.assertFalse(pgm.verify_razorpay_webhook_signature(tampered_body, signature, secret))
+
+    def test_wrong_webhook_secret_rejected(self):
+        import hmac as _hmac
+
+        body = b'{"event":"payment.captured"}'
+        signature = _hmac.new(b"wrong_secret", body, hashlib.sha256).hexdigest()
+
+        self.assertFalse(pgm.verify_razorpay_webhook_signature(body, signature, "real_secret"))
+
+    def test_garbage_signature_rejected(self):
+        body = b'{"event":"payment.captured"}'
+        self.assertFalse(pgm.verify_razorpay_webhook_signature(body, "not-a-real-signature", "secret"))
+
+
 class TestPayuHash(unittest.TestCase):
     def test_hash_matches_independently_built_reference_string(self):
         """Builds the documented pipe-delimited string by hand (not via

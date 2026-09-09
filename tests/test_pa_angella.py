@@ -69,5 +69,61 @@ class TestRefineAndSendToCeo(PaAngellaTestBase):
         self.assertEqual(ceo_count, 1)
 
 
+class TestTeam2Reachable(PaAngellaTestBase):
+    """Real regression test for the 5-Why fix, 2026-09-09: ceo_2 (Team 2's
+    CEO) existed in the registry as data since the double-team was built,
+    but ceo.decide() and refine_and_send_to_ceo() hardcoded 'ceo' as a
+    literal -- Team 2 was completely unreachable through any real code
+    path. Confirms the parameterized fix actually routes to Team 2, and
+    that Team 1 behavior is unchanged (no regression from the default)."""
+
+    def test_ceo_decide_can_route_to_team_2(self):
+        def fake_call_local(model, role_prompt, prompt):
+            return ('```json\n{"status": "approved", "priority_score": 5, "risk_score": 2, '
+                    '"business_impact_score": 4, "reason": "fine"}\n```', 10, 10)
+
+        with patch.object(model_gateway, "call_local", side_effect=fake_call_local), \
+             patch.object(routing, "_validate", return_value=(True, "PASS")):
+            from orchestrator import ceo
+            ceo.decide("test goal", agent_id="ceo_2")
+
+        with db.get_conn() as conn:
+            team1_count = conn.execute("SELECT COUNT(*) as c FROM tasks WHERE agent_id = 'ceo'").fetchone()["c"]
+            team2_count = conn.execute("SELECT COUNT(*) as c FROM tasks WHERE agent_id = 'ceo_2'").fetchone()["c"]
+        self.assertEqual(team1_count, 0)
+        self.assertEqual(team2_count, 1)
+
+    def test_default_still_routes_to_team_1_no_regression(self):
+        def fake_call_local(model, role_prompt, prompt):
+            return ('```json\n{"status": "approved", "priority_score": 5, "risk_score": 2, '
+                    '"business_impact_score": 4, "reason": "fine"}\n```', 10, 10)
+
+        with patch.object(model_gateway, "call_local", side_effect=fake_call_local), \
+             patch.object(routing, "_validate", return_value=(True, "PASS")):
+            from orchestrator import ceo
+            ceo.decide("test goal")
+
+        with db.get_conn() as conn:
+            team1_count = conn.execute("SELECT COUNT(*) as c FROM tasks WHERE agent_id = 'ceo'").fetchone()["c"]
+        self.assertEqual(team1_count, 1)
+
+    def test_refine_and_send_to_ceo_can_route_to_team_2(self):
+        def fake_call_local(model, role_prompt, prompt):
+            if "PA Angella" in role_prompt or "prompt-master" in role_prompt:
+                return ("Refined goal.", 10, 10)
+            return ('```json\n{"status": "approved", "priority_score": 5, "risk_score": 2, '
+                    '"business_impact_score": 4, "reason": "fine"}\n```', 10, 10)
+
+        with patch.object(model_gateway, "call_local", side_effect=fake_call_local), \
+             patch.object(routing, "_validate", return_value=(True, "PASS")):
+            pa_angella.refine_and_send_to_ceo("raw ask", ceo_agent_id="ceo_2")
+
+        with db.get_conn() as conn:
+            ceo_count = conn.execute("SELECT COUNT(*) as c FROM tasks WHERE agent_id = 'ceo'").fetchone()["c"]
+            ceo2_count = conn.execute("SELECT COUNT(*) as c FROM tasks WHERE agent_id = 'ceo_2'").fetchone()["c"]
+        self.assertEqual(ceo_count, 0)
+        self.assertEqual(ceo2_count, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

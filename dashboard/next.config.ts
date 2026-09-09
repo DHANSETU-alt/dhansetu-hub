@@ -10,25 +10,40 @@ import type { NextConfig } from "next";
 // dev server that can't hot-reload isn't a security win, it's just broken.
 const isProd = process.env.NODE_ENV === "production";
 
+// Real bug found live-testing the new Razorpay Checkout.js integration
+// (blackboxops-os/pricing): the "Pay Now" button silently did nothing --
+// no error, no network request to checkout.razorpay.com at all. Root
+// cause confirmed via `curl -sI` on this page's own headers: this CSP's
+// script-src/connect-src/frame-src had no Razorpay entries, so the
+// browser blocked checkout.js from ever loading, before it could even
+// report an error. Razorpay's own documented CSP requirements for
+// Checkout.js: script-src for the loader, connect-src for its XHR calls,
+// frame-src for the payment iframe it opens.
+const RAZORPAY_SCRIPT = "https://checkout.razorpay.com";
+const RAZORPAY_API = "https://api.razorpay.com";
+const RAZORPAY_LUMBERJACK = "https://lumberjack.razorpay.com"; // Checkout.js's own client-side logging endpoint
+
 const CSP = isProd
   ? [
       "default-src 'self'",
-      "script-src 'self'",
+      `script-src 'self' ${RAZORPAY_SCRIPT}`,
       "style-src 'self' 'unsafe-inline'", // Tailwind/inline styles, no remote style host
-      "img-src 'self' data: blob:",
+      "img-src 'self' data: blob: https://*.razorpay.com",
       "font-src 'self'", // next/font/google self-hosts at build time -- no external font host needed
-      "connect-src 'self'",
+      `connect-src 'self' ${RAZORPAY_API} ${RAZORPAY_LUMBERJACK}`,
+      `frame-src ${RAZORPAY_API}`,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
     ].join("; ")
   : [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-eval' 'unsafe-inline'", // Fast Refresh requires eval in dev
+      `script-src 'self' 'unsafe-eval' 'unsafe-inline' ${RAZORPAY_SCRIPT}`, // Fast Refresh requires eval in dev
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob:",
+      "img-src 'self' data: blob: https://*.razorpay.com",
       "font-src 'self'",
-      "connect-src 'self' ws: wss:", // HMR websocket
+      `connect-src 'self' ws: wss: ${RAZORPAY_API} ${RAZORPAY_LUMBERJACK}`, // ws:/wss: for HMR
+      `frame-src ${RAZORPAY_API}`,
     ].join("; ");
 
 const SECURITY_HEADERS = [
@@ -45,14 +60,11 @@ const nextConfig: NextConfig = {
   // entry, Next blocks the client chunks and Mission Control never hydrates,
   // leaving its React Flow canvas blank.
   //
-  // The Mac<->Linux Tailscale bridge (2026-09-06) hits the same wall from
-  // the other direction: opening either machine's dashboard via its
-  // tailnet IP (not 127.0.0.1/localhost) gets its dev-resource chunks
-  // blocked the same way, confirmed via a real "Blocked cross-origin
-  // request" warning in Linux's dashboard.log. Both machines' known
-  // tailnet addresses are allowlisted here so the same next.config.ts,
-  // synced to both, works from either side.
-  allowedDevOrigins: ["127.0.0.1", "localhost", "100.86.74.97", "100.117.111.80"],
+  // This Mac's own tailnet address is allowlisted too, for opening the
+  // dashboard from another device on the tailnet. Shakthi_OS is Mac-only
+  // as of 2026-09-08 -- the Linux tailnet address that used to be listed
+  // here (for the now-retired Mac<->Linux bridge) is gone.
+  allowedDevOrigins: ["127.0.0.1", "localhost", "100.117.111.80"],
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];
   },

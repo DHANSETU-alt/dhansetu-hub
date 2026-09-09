@@ -258,35 +258,102 @@ function FlowEdge({ sourceX, sourceY, targetX, targetY, data }: EdgeProps) {
   );
 }
 
-// --- Option C: a rotating radar sweep + ripple rings, both centered on the
-// founder node. Lives INSIDE React Flow's own node space (not a plain
-// absolutely-positioned div over the container) so it pans/zooms/fits in
-// lockstep with the rest of the graph instead of drifting independently of it. ---
-function RadarNode({ data }: NodeProps) {
+// --- Living-system core: a pulsing energy center with concentric rotating
+// containment rings, centered on the founder node. An original visual
+// design for this project -- not a reproduction of any existing character
+// or franchise's reactor/HUD art, just the general "glowing power core"
+// idiom used across a lot of sci-fi UI. Lives INSIDE React Flow's own node
+// space (not a plain absolutely-positioned div over the container) so it
+// pans/zooms/fits in lockstep with the rest of the graph instead of
+// drifting independently of it. Evolution of the previous single radar
+// sweep -- keeps that sweep as one (now subtler) layer and adds real
+// rotating rings + a breathing core, still cyan to match the spec's own
+// "cyan = live info flow" color language, restrained at low alpha so the
+// founder orb on top stays the visual focus, not this. ---
+function CoreNode({ data }: NodeProps) {
   const d = data as unknown as { size: number; width?: number; height?: number };
   const w = d.width ?? d.size;
   const h = d.height ?? d.size;
+  // Real bug found live: rings sized as a fraction of `size` (the WIDE
+  // background-sweep radius, spanning the whole org-tree cluster layout --
+  // easily 1000px+) came out as huge, thin, low-opacity circles that
+  // effectively disappeared against the rest of the busy neon graph. Fixed
+  // pixel radii, anchored on the founder orb (150px = 75px radius) instead,
+  // so the rings hug tight around it as a compact, unmistakable core no
+  // matter how large the overall graph's layout radius is.
+  const rings = [
+    { r: 100, dur: 12, dir: 1, dash: "2 9", width: 4 },
+    { r: 135, dur: 20, dir: -1, dash: "34 12", width: 3 },
+    { r: 172, dur: 30, dir: 1, dash: "5 5", width: 2.5 },
+  ];
   return (
     <div style={{ width: w, height: h, pointerEvents: "none", position: "relative" }}>
+      {/* Faint background sweep, same technique as before -- one slow wedge
+          of light circling the whole core, underneath the rings. */}
       <div
         className="absolute inset-0 rounded-full"
         style={{
-          // Cyan, not violet -- was reading as the "large purple gradient"
-          // the founder kept flagging across reference-image comparisons
-          // tonight. Matches the ripple rings below and the spec's own
-          // color language (cyan = live info flow), restrained at low alpha.
-          background: "conic-gradient(from 0deg, transparent 0deg, rgba(34,211,238,0.3) 14deg, transparent 70deg)",
-          animation: "radarSpin 5s linear infinite",
+          background: "conic-gradient(from 0deg, transparent 0deg, rgba(34,211,238,0.22) 14deg, transparent 70deg)",
+          animation: "radarSpin 7s linear infinite",
           mixBlendMode: "screen",
         }}
       />
+      {/* Breathing core glow -- dead center, scales/fades in a slow cycle so
+          the whole view reads as "alive" even with no recent task activity.
+          Fixed size (not size-relative) for the same reason as the rings. */}
+      <div
+        className="absolute rounded-full"
+        style={{
+          left: "50%", top: "50%", width: 130, height: 130,
+          marginLeft: -65, marginTop: -65,
+          background: "radial-gradient(circle, rgba(34,211,238,0.85) 0%, rgba(34,211,238,0.25) 55%, transparent 75%)",
+          filter: "blur(1px)",
+          animation: "coreBreathe 3.6s ease-in-out infinite",
+        }}
+      />
+      {/* Concentric containment rings -- segmented dashed circles (an SVG
+          circle with a dasharray reads as machined/mechanical, unlike a
+          smooth CSS border), each spinning at its own speed/direction so
+          they visibly counter-rotate against each other, not just spin
+          together as one blob. Bold stroke + strong glow so this reads
+          clearly even against the busy org-tree graph behind it. */}
+      {rings.map((ring, i) => {
+        const svgDim = ring.r * 2 + ring.width * 2;
+        const circumference = 2 * Math.PI * ring.r;
+        return (
+          <svg
+            key={i}
+            width={svgDim}
+            height={svgDim}
+            viewBox={`0 0 ${svgDim} ${svgDim}`}
+            className="absolute"
+            style={{
+              left: "50%", top: "50%", marginLeft: -svgDim / 2, marginTop: -svgDim / 2,
+              animation: `${ring.dir > 0 ? "ringSpinCW" : "ringSpinCCW"} ${ring.dur}s linear infinite`,
+              filter: "drop-shadow(0 0 6px rgba(34,211,238,0.85))",
+            }}
+          >
+            <circle
+              cx={svgDim / 2} cy={svgDim / 2} r={ring.r}
+              fill="none"
+              stroke="rgba(103,232,249,0.9)"
+              strokeWidth={ring.width}
+              strokeDasharray={ring.dash}
+              strokeDashoffset={(i * circumference) / 7}
+            />
+          </svg>
+        );
+      })}
+      {/* Sonar-ping ripples, same as before -- discrete pulses expanding
+          outward from center, a different rhythm than the continuous ring
+          spin so the core reads as both "running" and "actively pinging." */}
       {[0, 1, 2].map((i) => (
         <div
           key={i}
           className="absolute rounded-full"
           style={{
             left: "50%", top: "50%", width: 24, height: 24, marginLeft: -12, marginTop: -12,
-            border: "1px solid rgba(34,211,238,0.55)",
+            border: "2px solid rgba(103,232,249,0.75)",
             animation: `radarRipple 3.2s ease-out ${i * 1.05}s infinite`,
           }}
         />
@@ -295,7 +362,7 @@ function RadarNode({ data }: NodeProps) {
   );
 }
 
-const nodeTypes = { orb: OrbNode, radar: RadarNode, label: SquadLabelNode };
+const nodeTypes = { orb: OrbNode, radar: CoreNode, label: SquadLabelNode };
 const edgeTypes = { flow: FlowEdge };
 
 type BrandProps = { eyebrow?: string; title?: string; backLabel?: string; backHref?: string };
@@ -506,6 +573,12 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
           100% { transform: scale(11);  opacity: 0; }
         }
         @keyframes neonOrbit { to { transform: rotate(360deg); } }
+        @keyframes coreBreathe {
+          0%, 100% { transform: scale(0.85); opacity: 0.55; }
+          50%      { transform: scale(1.15); opacity: 1; }
+        }
+        @keyframes ringSpinCW  { to { transform: rotate(360deg); } }
+        @keyframes ringSpinCCW { to { transform: rotate(-360deg); } }
       `}</style>
 
       {/* "panel" variant (the /concept3 composite) shares the one page-level
@@ -519,7 +592,7 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
           <div className="text-xl font-semibold text-slate-100 mt-0.5">{title}</div>
         </div>
         <div className="flex items-center gap-3">
-          <AutoRefresh intervalSeconds={10} />
+          <AutoRefresh intervalSeconds={1} />
           {backLabel && (
             <a href={backHref} className="text-xs font-mono text-slate-400 hover:text-slate-100 border border-slate-700 rounded-full px-3 py-1.5">
               {backLabel}

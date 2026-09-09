@@ -1,4 +1,4 @@
-import { getOverview, getGovernorStatus, getCeoHealth, getIncidents, getWorkers, getPaymentLinks, getSecurityLatest, getInitiatives, getLinuxRuntime } from "@/lib/api";
+import { getOverview, getGovernorStatus, getCeoHealth, getIncidents, getWorkers, getPaymentLinks, getSecurityLatest, getInitiatives, getMacRuntime, getAiUsage } from "@/lib/api";
 import { Card, CardHeader, CardBody, StatTile, Badge, EmptyState } from "@/components/ui";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import Link from "next/link";
@@ -23,7 +23,7 @@ export default async function ExecutiveDashboard() {
   const ollama = overview.cost_summary.find((c) => c.provider === "ollama");
   const claude = overview.cost_summary.find((c) => c.provider === "claude");
 
-  const [governor, ceoHealth, incidentsResult, workersResult, paymentsResult, securityResult, initiativesResult, linuxRuntime] = await Promise.all([
+  const [governor, ceoHealth, incidentsResult, workersResult, paymentsResult, securityResult, initiativesResult, macRuntime, aiUsage] = await Promise.all([
     getGovernorStatus().catch(() => null),
     getCeoHealth().catch(() => null),
     getIncidents().catch(() => null),
@@ -31,11 +31,12 @@ export default async function ExecutiveDashboard() {
     getPaymentLinks(20).catch(() => null),
     getSecurityLatest().catch(() => null),
     // The Founder dashboard is the task ledger of record. Do not hide
-    // completed or paused initiatives here: that made the Linux migration
+    // completed or paused initiatives here: that made the Linux-to-Mac migration
     // look as if imported Mac tasks were missing even though they remained
     // present in the API and database.
     getInitiatives().catch(() => null),
-    getLinuxRuntime().catch(() => null),
+    getMacRuntime().catch(() => null),
+    getAiUsage().catch(() => null),
   ]);
   const allInitiatives = initiativesResult?.initiatives ?? [];
   const revenueMission = allInitiatives.find((initiative) => initiative.title.includes("Revenue Mission Engine"));
@@ -46,9 +47,9 @@ export default async function ExecutiveDashboard() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="mb-2 flex flex-wrap gap-2"><Badge tone="local">Linux control center</Badge><Badge tone={linuxRuntime ? "good" : "bad"}>{linuxRuntime ? "Runtime connected" : "Runtime unavailable"}</Badge></div>
+          <div className="mb-2 flex flex-wrap gap-2"><Badge tone="local">Mac control center</Badge><Badge tone={macRuntime ? "good" : "bad"}>{macRuntime ? "Runtime connected" : "Runtime unavailable"}</Badge></div>
           <h1 className="text-2xl font-semibold tracking-tight">SHAKTHI_OS 3.2 Working Board</h1>
-          <p className="text-sm text-[var(--muted-foreground)] mt-1">Founder-level view of data stored and services running on this Linux installation.</p>
+          <p className="text-sm text-[var(--muted-foreground)] mt-1">Founder-level view of data stored and services running on this Mac installation.</p>
         </div>
         <AutoRefresh intervalSeconds={1} />
       </div>
@@ -62,23 +63,23 @@ export default async function ExecutiveDashboard() {
 
       <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
         <Card>
-          <CardHeader title="Linux Runtime" subtitle={linuxRuntime ? `Live local sample · ${linuxRuntime.hostname} · API :${linuxRuntime.api_port}` : "No current Linux sample available"} action={<Badge tone={linuxRuntime ? "good" : "bad"}>{linuxRuntime ? "LIVE LOCAL" : "DISCONNECTED"}</Badge>} />
+          <CardHeader title="Mac Runtime" subtitle={macRuntime ? `Live local sample · ${macRuntime.hostname} · API :${macRuntime.api_port}` : "No current Mac sample available"} action={<Badge tone={macRuntime ? "good" : "bad"}>{macRuntime ? "LIVE LOCAL" : "DISCONNECTED"}</Badge>} />
           <CardBody>
-            {linuxRuntime ? (
+            {macRuntime ? (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <StatTile label="CPU" value={`${linuxRuntime.cpu_percent}%`} hint={`${linuxRuntime.logical_cpus ?? "—"} logical CPUs`} tone={linuxRuntime.cpu_percent > 90 ? "bad" : linuxRuntime.cpu_percent > 75 ? "warn" : "good"} />
-                  <StatTile label="RAM" value={`${linuxRuntime.ram_percent}%`} hint={`${(linuxRuntime.ram_total_bytes / 1073741824).toFixed(1)} GiB total`} tone={linuxRuntime.ram_percent > 90 ? "bad" : linuxRuntime.ram_percent > 80 ? "warn" : "good"} />
-                  <StatTile label="Disk" value={`${linuxRuntime.disk_percent}%`} hint={`${(linuxRuntime.disk_free_bytes / 1073741824).toFixed(0)} GiB free`} tone={linuxRuntime.disk_percent > 90 ? "bad" : linuxRuntime.disk_percent > 80 ? "warn" : "good"} />
-                  <StatTile label="Battery" value={linuxRuntime.battery_percent === null ? "N/A" : `${linuxRuntime.battery_percent}%`} hint={linuxRuntime.battery_plugged === null ? "Not detected" : linuxRuntime.battery_plugged ? "AC connected" : "On battery"} tone={linuxRuntime.battery_plugged === false ? "warn" : "good"} />
+                  <StatTile label="CPU" value={`${macRuntime.cpu_percent}%`} hint={`${macRuntime.logical_cpus ?? "—"} logical CPUs`} tone={macRuntime.cpu_percent > 90 ? "bad" : macRuntime.cpu_percent > 75 ? "warn" : "good"} />
+                  <StatTile label="RAM" value={`${macRuntime.ram_percent}%`} hint={`${(macRuntime.ram_total_bytes / 1073741824).toFixed(1)} GiB total`} tone={macRuntime.ram_percent > 90 ? "bad" : macRuntime.ram_percent > 80 ? "warn" : "good"} />
+                  <StatTile label="Disk" value={`${macRuntime.disk_percent}%`} hint={`${(macRuntime.disk_free_bytes / 1073741824).toFixed(0)} GiB free`} tone={macRuntime.disk_percent > 90 ? "bad" : macRuntime.disk_percent > 80 ? "warn" : "good"} />
+                  <StatTile label="Battery" value={macRuntime.battery_percent === null ? "N/A" : `${macRuntime.battery_percent}%`} hint={macRuntime.battery_plugged === null ? "Not detected" : macRuntime.battery_plugged ? "AC connected" : "On battery"} tone={macRuntime.battery_plugged === false ? "warn" : "good"} />
                 </div>
                 <div className="grid gap-2 text-xs text-[var(--muted-foreground)] sm:grid-cols-2">
-                  <div className="rounded-md border border-[var(--border)] bg-black/20 p-3"><span className="block text-[10px] uppercase tracking-wider">Host</span><span className="text-[var(--ink)]">{linuxRuntime.os} {linuxRuntime.kernel} · {linuxRuntime.architecture}</span></div>
-                  <div className="rounded-md border border-[var(--border)] bg-black/20 p-3"><span className="block text-[10px] uppercase tracking-wider">Processor</span><span className="text-[var(--ink)]">{linuxRuntime.cpu_name}</span></div>
-                  <div className="rounded-md border border-[var(--border)] bg-black/20 p-3 sm:col-span-2"><span className="block text-[10px] uppercase tracking-wider">NVIDIA GPU</span><span className={linuxRuntime.gpu.state === "CONNECTED" ? "text-[var(--good)]" : "text-[var(--warn)]"}>{linuxRuntime.gpu.state === "CONNECTED" ? linuxRuntime.gpu.name : `${linuxRuntime.gpu.state} — ${linuxRuntime.gpu.reason}`}</span></div>
+                  <div className="rounded-md border border-[var(--border)] bg-black/20 p-3"><span className="block text-[10px] uppercase tracking-wider">Host</span><span className="text-[var(--ink)]">{macRuntime.os} {macRuntime.kernel} · {macRuntime.architecture}</span></div>
+                  <div className="rounded-md border border-[var(--border)] bg-black/20 p-3"><span className="block text-[10px] uppercase tracking-wider">Processor</span><span className="text-[var(--ink)]">{macRuntime.cpu_name}</span></div>
+                  <div className="rounded-md border border-[var(--border)] bg-black/20 p-3 sm:col-span-2"><span className="block text-[10px] uppercase tracking-wider">GPU</span><span className={macRuntime.gpu.state === "CONNECTED" ? "text-[var(--good)]" : "text-[var(--warn)]"}>{macRuntime.gpu.state === "CONNECTED" ? macRuntime.gpu.name : `${macRuntime.gpu.state} — ${macRuntime.gpu.reason}`}</span></div>
                 </div>
               </div>
-            ) : <EmptyState>Linux runtime API did not return a sample. Stored business data below may still be available.</EmptyState>}
+            ) : <EmptyState>Mac runtime API did not return a sample. Stored business data below may still be available.</EmptyState>}
           </CardBody>
         </Card>
         <Card>
@@ -93,6 +94,41 @@ export default async function ExecutiveDashboard() {
           </CardBody>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader
+          title="AI Usage Today"
+          subtitle={aiUsage ? `Real counts from the cost ledger, ${aiUsage.date}` : "Usage API did not return a sample"}
+          action={<Badge tone={aiUsage?.cloud.configured ? "good" : "neutral"}>{aiUsage?.cloud.configured ? "CLOUD CONFIGURED" : "LOCAL ONLY"}</Badge>}
+        />
+        <CardBody>
+          {aiUsage ? (
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-md border border-[var(--border)] p-3">
+                <span className="block text-[10px] uppercase tracking-wider text-[var(--muted-foreground)]">Claude (this system's API)</span>
+                <b className="mt-1 block text-lg">{aiUsage.cloud.calls_today} calls</b>
+                <span className="block text-xs text-[var(--muted-foreground)]">${aiUsage.cloud.cost_usd_today.toFixed(4)} spent today{aiUsage.cloud.daily_budget_usd ? ` of $${aiUsage.cloud.daily_budget_usd} budget (${aiUsage.cloud.budget_remaining_usd?.toFixed(2)} left)` : " · no daily budget configured"}</span>
+                {aiUsage.cloud.note && <span className="mt-1 block text-[11px] text-[var(--warn)]">{aiUsage.cloud.note}</span>}
+              </div>
+              <div className="rounded-md border border-[var(--border)] p-3">
+                <span className="block text-[10px] uppercase tracking-wider text-[var(--muted-foreground)]">ChatGPT</span>
+                <b className="mt-1 block text-lg">Not integrated</b>
+                <span className="block text-xs text-[var(--muted-foreground)]">{aiUsage.chatgpt.note}</span>
+              </div>
+              <div className="rounded-md border border-[var(--border)] p-3">
+                <span className="block text-[10px] uppercase tracking-wider text-[var(--muted-foreground)]">Ollama (local, free)</span>
+                <b className="mt-1 block text-lg">{aiUsage.local.calls_today} calls</b>
+                <span className="block text-xs text-[var(--muted-foreground)]">{aiUsage.local.limit}</span>
+                <span className="mt-1 block text-[11px] text-[var(--muted-foreground)]">
+                  {aiUsage.local.estimated_remaining_calls_today !== null
+                    ? `~${aiUsage.local.estimated_remaining_calls_today} more calls estimated today (${aiUsage.local.calculation_basis})`
+                    : aiUsage.local.calculation_basis}
+                </span>
+              </div>
+            </div>
+          ) : <EmptyState>AI usage API did not return a sample.</EmptyState>}
+        </CardBody>
+      </Card>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatTile label="Businesses" value={String(overview.businesses.length)} />
@@ -135,7 +171,7 @@ export default async function ExecutiveDashboard() {
       <Card>
         <CardHeader
           title="Founder Tasks, Projects &amp; OS — complete ledger"
-          subtitle={`${allInitiatives.length} imported and Linux-native initiatives — real progress from stored milestones`}
+          subtitle={`${allInitiatives.length} imported and Mac-native initiatives — real progress from stored milestones`}
           action={
             <Link href="/initiatives" className="text-xs font-mono text-[var(--local)] hover:underline">
               View all →

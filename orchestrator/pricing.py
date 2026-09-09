@@ -26,12 +26,26 @@ PRODUCT_PRICING = {
     # only, not a claim the product exists.
     "pdf_studio": {"free_uses": 10, "price_inr": 99, "period_days": 365, "label": "Dhansetu PDF Studio — Annual"},
     "peopledesk": {"free_uses": 0, "price_inr": 99, "period_days": 30, "label": "Dhansetu PeopleDesk — Monthly"},
-    # Illustrative only -- the founder hasn't set real blackboxOps_OS pricing
-    # yet. Present these on the staging Pricing page clearly marked as
-    # proposed, not confirmed; don't let a placeholder number pass as a
-    # real decision.
-    "blackboxops_os_starter": {"free_uses": 0, "price_inr": 2999, "period_days": 30, "label": "blackboxOps_OS Starter — Monthly (proposed)"},
-    "blackboxops_os_growth": {"free_uses": 0, "price_inr": 7999, "period_days": 30, "label": "blackboxOps_OS Growth — Monthly (proposed)"},
+    # Real founder decision, 2026-09-09: founding-customer launch pricing,
+    # explicitly a discount from the earlier confirmed ₹6,999/₹17,999
+    # (2026-08-24) while there's no track record/case studies yet -- not
+    # a permanent bargain-bin position. These numbers happen to match
+    # what was sitting here marked "(proposed)" from an even earlier,
+    # never-finalized round -- coincidence, not a prior decision being
+    # silently reused; confirmed fresh tonight against the founder's own
+    # explicit instruction, not inherited from the stale placeholder.
+    #
+    # Changed to ONE-TIME, capped at the first 300 customers, same
+    # session (founder: "make it one time for first 300 customers" --
+    # then "it showing subscription base, make it one time" when the
+    # page copy still read monthly). is_one_time=True means
+    # confirm_subscription_paid() sets valid_until=NULL (never expires)
+    # instead of the usual +365 days; max_customers is a hard cap
+    # enforced in create_subscription_payment() below, counting only
+    # 'active' (paid) rows -- an abandoned/pending checkout never
+    # occupies a slot a 301st real customer could have used.
+    "blackboxops_os_starter": {"free_uses": 0, "price_inr": 2999, "period_days": None, "is_one_time": True, "max_customers": 300, "label": "blackboxOps_OS Starter — One-time (first 300 founding customers)"},
+    "blackboxops_os_growth": {"free_uses": 0, "price_inr": 7999, "period_days": None, "is_one_time": True, "max_customers": 300, "label": "blackboxOps_OS Growth — One-time (first 300 founding customers)"},
 }
 
 
@@ -84,6 +98,17 @@ def create_subscription_payment(email: str, product: str, gateway: str, **gatewa
     manual-entry-only rule as every other payment integration here."""
     _validate_product(product)
     pricing = PRODUCT_PRICING[product]
+
+    max_customers = pricing.get("max_customers")
+    if max_customers is not None:
+        with db.get_conn() as conn:
+            already_sold = db.count_active_subscriptions(conn, product)
+        if already_sold >= max_customers:
+            raise PricingError(
+                f"'{pricing['label']}' is sold out -- all {max_customers} spots at this price are taken "
+                f"({already_sold} confirmed). Not creating a payment for a spot that no longer exists."
+            )
+
     from . import payment_gateway_manager as pgm
 
     if gateway == "razorpay":

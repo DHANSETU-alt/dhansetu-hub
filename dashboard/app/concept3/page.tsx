@@ -2,7 +2,7 @@ import Link from "next/link";
 import { loadSystemStatus, ACTIVITY_WINDOW_MINUTES } from "@/lib/systemStatus";
 import MissionControlFlow from "@/components/MissionControlFlow";
 import { ExecutivePanel } from "@/components/ExecutivePanel";
-import { getLinuxRuntime, type LinuxRuntime } from "@/lib/api";
+import { getMacRuntime, type MacRuntime } from "@/lib/api";
 import { SHAKTHI_OS_VERSION } from "@/lib/version";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ function ConceptNav({ active }: { active: "living" | "executive" }) {
       const selected = active === "living" ? label === "Living System" : label === "Executive Dashboard";
       return <Link key={label} href={href} className={selected ? "selected" : ""}><span>◈</span>{label}</Link>;
     })}</div>)}</nav>
-    <div className="concept-health"><span>System Health</span><b><em /> Linux connected</b></div>
+    <div className="concept-health"><span>System Health</span><b><em /> Mac connected</b></div>
   </aside>;
 }
 
@@ -30,23 +30,23 @@ function Metric({ label, value, sub, warn = false }: { label: string; value: str
   return <div className="hardware-metric"><span>{label}</span><strong className={warn ? "warn" : ""}>{value}</strong><small>{sub}</small></div>;
 }
 
-function HardwareBar({ runtime }: { runtime: LinuxRuntime | null }) {
+function HardwareBar({ runtime }: { runtime: MacRuntime | null }) {
   const gib = (n: number) => (n / 1073741824).toFixed(1);
   return <footer className="concept-hardware">
     <div className="hardware-title">HARDWARE &amp; SYSTEM HEALTH <i /> <b>{runtime ? "LIVE LOCAL" : "DISCONNECTED"}</b></div>
     <div className="hardware-grid">
-      <Metric label="CPU" value={runtime ? `${runtime.cpu_percent}%` : "—"} sub={runtime ? `${runtime.logical_cpus ?? "—"} logical · ${runtime.cpu_name}` : "No Linux sample"}/>
-      <Metric label="RAM" value={runtime ? `${runtime.ram_percent}%` : "—"} sub={runtime ? `${gib(runtime.ram_total_bytes)} GiB total` : "No Linux sample"}/>
-      <Metric label="STORAGE" value={runtime ? `${runtime.disk_percent}%` : "—"} sub={runtime ? `${gib(runtime.disk_free_bytes)} GiB free` : "No Linux sample"}/>
-      <Metric label="GPU" value={runtime?.gpu.state ?? "—"} sub={runtime?.gpu.name ?? runtime?.gpu.reason ?? "No Linux sample"} warn={runtime?.gpu.state !== "CONNECTED"}/>
+      <Metric label="CPU" value={runtime ? `${runtime.cpu_percent}%` : "—"} sub={runtime ? `${runtime.logical_cpus ?? "—"} logical · ${runtime.cpu_name}` : "No Mac sample"}/>
+      <Metric label="RAM" value={runtime ? `${runtime.ram_percent}%` : "—"} sub={runtime ? `${gib(runtime.ram_total_bytes)} GiB total` : "No Mac sample"}/>
+      <Metric label="STORAGE" value={runtime ? `${runtime.disk_percent}%` : "—"} sub={runtime ? `${gib(runtime.disk_free_bytes)} GiB free` : "No Mac sample"}/>
+      <Metric label="GPU" value={runtime?.gpu.state ?? "—"} sub={runtime?.gpu.name ?? runtime?.gpu.reason ?? "No Mac sample"} warn={runtime?.gpu.state !== "CONNECTED"}/>
       <Metric label="BATTERY" value={runtime?.battery_percent == null ? "N/A" : `${runtime.battery_percent}%`} sub={runtime?.battery_plugged == null ? "Not detected" : runtime.battery_plugged ? "AC connected" : "On battery"} warn={runtime?.battery_plugged === false}/>
-      <Metric label="HOST" value={runtime?.os ?? "—"} sub={runtime ? `${runtime.kernel} · ${runtime.architecture}` : "No Linux sample"}/>
+      <Metric label="HOST" value={runtime?.os ?? "—"} sub={runtime ? `${runtime.kernel} · ${runtime.architecture}` : "No Mac sample"}/>
     </div>
   </footer>;
 }
 
 export default async function Concept3Page() {
-  const [status, runtime] = await Promise.all([loadSystemStatus(), getLinuxRuntime().catch(() => null)]);
+  const [status, runtime] = await Promise.all([loadSystemStatus(), getMacRuntime().catch(() => null)]);
   return <div className="concept3-shell">
     <header className="concept3-title"><h1>{SHAKTHI_OS_VERSION.osName} CONCEPT 3 — EXECUTIVE NEURAL NETWORK</h1><p>Intelligent. Autonomous. Accountable.</p></header>
     <div className="concept3-workspace">

@@ -1,10 +1,10 @@
-import { getHealth, getLinuxRuntime } from "@/lib/api";
+import { getHealth, getMacRuntime } from "@/lib/api";
 import { Card, CardHeader, CardBody, Badge } from "@/components/ui";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import Link from "next/link";
 
 export default async function Connections() {
-  const [health, runtime] = await Promise.all([getHealth().catch(() => null), getLinuxRuntime().catch(() => null)]);
+  const [health, runtime] = await Promise.all([getHealth().catch(() => null), getMacRuntime().catch(() => null)]);
   return <div className="space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-4"><h1 className="text-2xl font-semibold">Connections & readiness</h1><AutoRefresh intervalSeconds={1}/></div>
     <p className="text-[var(--muted-foreground)]">Local API evidence for this installation. A reachable endpoint does not prove successful task execution.</p>

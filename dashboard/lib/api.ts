@@ -441,7 +441,7 @@ export const getWebsites = () => apiGet<{ sites: Site[] }>("/api/websites");
 export const getHealth = () =>
   apiGet<{ db_ok: boolean; ollama_host: string; allow_exec: boolean; dry_run: boolean; workspaces_dir: string }>("/api/health");
 
-export type LinuxRuntime = {
+export type MacRuntime = {
   source: "LIVE_LOCAL_SAMPLE";
   sampled_at: number;
   hostname: string;
@@ -462,7 +462,36 @@ export type LinuxRuntime = {
   api_port: number;
 };
 
-export const getLinuxRuntime = () => apiGet<LinuxRuntime>("/api/linux/runtime");
+export const getMacRuntime = () => apiGet<MacRuntime>("/api/mac/runtime");
+
+export type AiUsage = {
+  date: string;
+  cloud: {
+    provider: "claude";
+    configured: boolean;
+    calls_today: number;
+    tokens_in_today: number;
+    tokens_out_today: number;
+    cost_usd_today: number;
+    daily_budget_usd: number | null;
+    budget_remaining_usd: number | null;
+    note: string | null;
+  };
+  chatgpt: { integrated: false; note: string };
+  local: {
+    provider: "ollama";
+    calls_today: number;
+    tokens_in_today: number;
+    tokens_out_today: number;
+    limit: string;
+    avg_seconds_per_call_observed_today: number | null;
+    assumed_operating_hours_per_day: number;
+    estimated_remaining_calls_today: number | null;
+    calculation_basis: string;
+  };
+};
+
+export const getAiUsage = () => apiGet<AiUsage>("/api/ai-usage");
 
 export type Bug = {
   id: number;

@@ -57,3 +57,14 @@ PDF_STUDIO_MAX_FILE_BYTES = 50_000_000  # 50MB per uploaded file
 
 # --- Emergency Response Team (ERT) -----------------------------------------
 POSTMORTEMS_DIR = ROOT / "postmortems"  # one file per incident, never overwritten
+
+# --- AI usage panel ---------------------------------------------------------
+# Optional founder-set daily cloud spend budget for the dashboard's usage
+# panel. 0/unset means "no budget configured" -- the panel shows real spend
+# with no remaining-budget claim rather than dividing by a number nobody set.
+CLOUD_DAILY_BUDGET_USD = float(os.environ.get("SHAKTHI_CLOUD_DAILY_BUDGET_USD", "0") or 0)
+# Assumed active hours/day for the local-capacity estimate shown alongside
+# real Ollama usage -- a rough, labeled estimate, not a hard limit (local
+# has none). Override if this machine actually runs SHAKTHI_OS fewer/more
+# hours a day.
+LOCAL_OPERATING_HOURS_PER_DAY = float(os.environ.get("SHAKTHI_LOCAL_OPERATING_HOURS", "16"))
