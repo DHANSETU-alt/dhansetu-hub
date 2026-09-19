@@ -1,0 +1,2 @@
+const links = [["Terms", "/terms"], ["Privacy", "/privacy"], ["Refunds", "/refund"], ["Delivery", "/delivery"], ["Contact", "/contact"], ["Billing", "/billing"]];
+export function SiteFooter() { return <footer className="border-t bg-slate-950 px-6 py-10 text-slate-300"><div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-5"><p>© {new Date().getFullYear()} DhanSetu Hub · Soham Enterprise</p><nav className="flex flex-wrap gap-5">{links.map(([label, href]) => <a className="hover:text-white" href={href} key={href}>{label}</a>)}</nav></div></footer>; }

@@ -1,0 +1,2 @@
+import type { ReactNode } from "react";
+export function LegalPage({ title, children }: { title: string; children: ReactNode }) { return <main className="mx-auto min-h-screen max-w-3xl space-y-5 px-6 py-16 text-slate-800"><p className="inline-block rounded bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900">DRAFT — review with a lawyer</p><h1 className="text-4xl font-bold text-slate-950">{title}</h1>{children}<hr/><p className="text-sm">Business: Soham Enterprise · Support and grievance contact: support@dhansetuhub.in</p></main>; }
