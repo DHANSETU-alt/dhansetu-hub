@@ -13,6 +13,10 @@ Razorpay can confirm payment through either path:
 
 Both paths fetch the order from Razorpay, validate its amount, currency, user, and tier against server records, then call `grantEntitlement`. The PostgreSQL function locks the purchase, enforces the seat limit atomically, records the unique payment ID, and updates the profile plan. Duplicate delivery is successful but does not consume another seat.
 
+## Strict no-repeat-charge rule
+
+After the first confirmed payment, the customer must never pay again to recover access. Browser failures, webhook delays, provider timeouts, and network interruptions are recovery cases, not new checkout cases. Reconciliation must fetch the existing Razorpay payment, require captured/paid status and trusted order details, and retry the same idempotent entitlement grant keyed by the unique payment ID. An email address by itself cannot grant access, and a missing entitlement must never trigger a second charge.
+
 After browser verification, `/welcome?order=…` polls `/api/entitlement` every two seconds. Active accounts redirect to `NEXT_PUBLIC_APP_URL`. Support instructions appear only if activation has not completed in 60 seconds.
 
 ## Tables and functions
@@ -36,4 +40,4 @@ RLS permits authenticated users to read only their own purchases. Browser roles 
 6. Confirm `/welcome` redirects, `/billing` contains one paid record, and `profiles.plan` is `founding_lifetime`.
 7. Run `npm run verify:payment` for the keyless regression suite. It generates valid and invalid HMACs and verifies authentication, idempotency, tamper resistance, and concurrent seat limits against a local-only backend.
 
-The migration is intentionally not applied by this repository task.
+The automatic-entitlement migration is applied to the linked `moneytrack` project. Production deployment still requires the application host to be authorized and configured.

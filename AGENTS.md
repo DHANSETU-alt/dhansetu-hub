@@ -13,6 +13,10 @@
 9. Both browser verification and signed webhooks call the same PostgreSQL-backed idempotent entitlement function.
 10. The welcome page polls entitlement for 60 seconds and redirects into the app; manual support is fallback-only.
 
+## Non-negotiable payment invariant
+
+One confirmed Razorpay payment grants access exactly once. The same customer must never be charged again because of a webhook delay, browser crash, redirect failure, provider timeout, or network interruption. Reconciliation is always idempotent: verify the payment with Razorpay, then retry the same entitlement grant using the unique payment ID. Payment confirmation is required before access; email alone is never sufficient.
+
 ## Commands
 
 ```bash
@@ -64,4 +68,3 @@ Razorpay signed webhook ────────────┤
 - Next route bundles could not share module-local test state. Fix: use a namespaced, test-only `globalThis` store; production always uses Supabase.
 - Integrated build lint rejected `var` in a global declaration. TypeScript requires it for global augmentation; fix is one scoped ESLint exception on that declaration.
 - `npm audit` can fail when registry DNS is unavailable. Re-run with network access and record the actual result; never claim a clean audit from a failed request.
-

@@ -1,7 +1,7 @@
 export const TIERS = {
-  founding_lifetime: { label: "Founding Lifetime", amountPaise: 9900, currency: "INR", seatLimit: 100 },
-  pro_lifetime: { label: "Pro Lifetime", amountPaise: 49900, currency: "INR", seatLimit: 250 },
-  team_lifetime: { label: "Team Lifetime", amountPaise: 149900, currency: "INR", seatLimit: 50 },
+  founding_lifetime: { label: "AI Starter Kit", amountPaise: 199900, currency: "INR", seatLimit: 100 },
+  pro_lifetime: { label: "AI Agency Builder", amountPaise: 999900, currency: "INR", seatLimit: 250 },
+  team_lifetime: { label: "Agency + Tools Combo", amountPaise: 1999900, currency: "INR", seatLimit: 50 },
 } as const;
 
 export type TierId = keyof typeof TIERS;
