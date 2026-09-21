@@ -1,0 +1,3 @@
+# Verified external SSD discovered on 2026-09-22.
+# Copy into /etc/fstab only after confirming /dev/sda1 is still this Kingston SSD.
+UUID=9e8acd1d-2da8-4593-9a90-3b3cd1af3968 /mnt/dhansetu-data ext4 nofail,x-systemd.device-timeout=10s,nodev,nosuid 0 2

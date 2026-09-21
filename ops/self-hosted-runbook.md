@@ -4,8 +4,8 @@ The application remains on Supabase/Postgres until an explicit, tested database 
 
 ## One-time SSD setup
 
-1. Identify the external device with `lsblk -f` and create a filesystem only after confirming the exact device.
-2. Record its UUID in `/etc/fstab` and mount it at `/mnt/dhansetu-data` with `nofail,x-systemd.device-timeout=10s` only if the service is configured to remain stopped when absent.
+1. Identify the external device with `lsblk -f`; the verified current device is Kingston `/dev/sda1`, ext4, UUID `9e8acd1d-2da8-4593-9a90-3b3cd1af3968`. Do not create a filesystem on it.
+2. After confirming that identity, copy the matching line from `ops/dhansetu-fstab.example` into `/etc/fstab` and mount it at `/mnt/dhansetu-data` with `nofail,x-systemd.device-timeout=10s` only if the service is configured to remain stopped when absent.
 3. Set `DHANSETU_STORAGE_ROOT=/mnt/dhansetu-data` and `DHANSETU_STORAGE_UUID=<recorded UUID>` in a root-readable service environment, never in Git.
 4. Run `scripts/storage-guard.sh`; it must return exit 0 before starting the app.
 
