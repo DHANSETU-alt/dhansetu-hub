@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const required = [
@@ -12,10 +13,7 @@ export async function GET() {
     'RAZORPAY_WEBHOOK_SECRET',
   ];
   const configuration = Object.fromEntries(required.map((name) => [name, Boolean(process.env[name])]));
-  const paymentReady = configuration.SUPABASE_SERVICE_ROLE_KEY
-    && configuration.RAZORPAY_KEY_ID
-    && configuration.RAZORPAY_KEY_SECRET
-    && configuration.RAZORPAY_WEBHOOK_SECRET;
+  const paymentReady = required.every((name) => configuration[name]);
   return NextResponse.json({
     status: 'ok',
     service: 'dhansetu-hub',
