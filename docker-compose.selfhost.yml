@@ -1,0 +1,18 @@
+services:
+  dhansetu:
+    build: .
+    restart: "no"
+    env_file: .env.selfhost
+    environment:
+      DHANSETU_STORAGE_ROOT: /mnt/dhansetu-data
+    volumes:
+      - ${DHANSETU_STORAGE_ROOT:-/mnt/dhansetu-data}:/mnt/dhansetu-data
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["/app/scripts/storage-guard.sh && exec node server.js"]
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
