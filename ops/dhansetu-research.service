@@ -1,0 +1,16 @@
+[Unit]
+Description=DhanSetu bounded daily official-source research
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=blackboxops
+WorkingDirectory=/home/blackboxops/Projects/dhansetu-hub
+EnvironmentFile=-/home/blackboxops/Projects/dhansetu-hub/.env.selfhost
+ExecStart=/bin/bash -lc 'scripts/storage-guard.sh && npm run research:daily'
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

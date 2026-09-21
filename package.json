@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "verify:payment": "tsx scripts/verify-payment-flow.ts"
+    ,"research:daily": "tsx scripts/daily-research.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
