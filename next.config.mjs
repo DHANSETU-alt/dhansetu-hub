@@ -1,6 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  experimental: {
+    // Keep type checking in-process for the current Linux/Node runner.
+    // The CLI child process loses its captured JSON stream in this host.
+    useTypeScriptCli: false,
+    workerThreads: true,
+  },
   async headers() {
     return [
       {

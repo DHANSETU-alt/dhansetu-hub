@@ -2,7 +2,7 @@
 
 ## Architecture model
 
-1. The application is Next.js 14 App Router with React 18, TypeScript, and Tailwind CSS.
+1. The application is Next.js 16 App Router with React 18, TypeScript, and Tailwind CSS.
 2. Render is the intended Next.js runtime; API route handlers use the Node.js runtime.
 3. Supabase project `moneytrack` owns authentication and PostgreSQL data.
 4. Browser and server Supabase clients share auth cookies through `@supabase/ssr`.
@@ -27,6 +27,8 @@ npm test
 npm run build
 npm run verify:payment
 ```
+
+Next 16 uses the repository's Webpack build in local and CI verification.
 
 For a build without production secrets, provide placeholder-shaped values for the required server variables. Never commit those values.
 
@@ -68,3 +70,16 @@ Razorpay signed webhook ────────────┤
 - Next route bundles could not share module-local test state. Fix: use a namespaced, test-only `globalThis` store; production always uses Supabase.
 - Integrated build lint rejected `var` in a global declaration. TypeScript requires it for global augmentation; fix is one scoped ESLint exception on that declaration.
 - `npm audit` can fail when registry DNS is unavailable. Re-run with network access and record the actual result; never claim a clean audit from a failed request.
+- Next 16 makes `cookies()` and route `searchParams` asynchronous. Await both in server code and page props.
+- Next 16 removed the `next lint` command. The repository uses the flat `eslint .` script with `eslint-config-next` 16.
+- This Linux runner loses the TypeScript CLI child-process stream during a Next build. `experimental.useTypeScriptCli=false` and `workerThreads=true` preserve full in-process type checking; the production build is verified with this configuration.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

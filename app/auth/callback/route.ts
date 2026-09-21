@@ -7,7 +7,8 @@ export async function GET(request: NextRequest) {
   const next = url.searchParams.get("next");
   const destination = next?.startsWith("/") && !next.startsWith("//") ? next : "/";
   if (!code) return NextResponse.redirect(new URL("/login?error=missing_auth_code", request.url));
-  const { error } = await createServerSupabase().auth.exchangeCodeForSession(code);
+  const supabase = await createServerSupabase();
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) return NextResponse.redirect(new URL("/login?error=oauth_callback_failed", request.url));
   return NextResponse.redirect(new URL(destination, request.url));
 }

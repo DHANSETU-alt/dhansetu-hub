@@ -18,7 +18,18 @@ export function BudgetWorkspace() {
   const [merchant, setMerchant] = useState("");
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("Everyday");
-  useEffect(() => { try { const saved = window.localStorage.getItem(STORAGE_KEY); if (saved) setState(JSON.parse(saved) as BudgetState); } catch { /* local data remains empty if storage is unavailable */ } setHydrated(true); }, []);
+  useEffect(() => {
+    const load = window.setTimeout(() => {
+      try {
+        const saved = window.localStorage.getItem(STORAGE_KEY);
+        if (saved) setState(JSON.parse(saved) as BudgetState);
+      } catch {
+        // Local data remains empty if storage is unavailable.
+      }
+      setHydrated(true);
+    }, 0);
+    return () => window.clearTimeout(load);
+  }, []);
   useEffect(() => { if (hydrated) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }, [hydrated, state]);
   const expenses = useMemo(() => state.transactions.filter((transaction) => transaction.direction === "expense").reduce((sum, transaction) => sum + transaction.amount, 0), [state.transactions]);
   const incomeTransactions = useMemo(() => state.transactions.filter((transaction) => transaction.direction === "income").reduce((sum, transaction) => sum + transaction.amount, 0), [state.transactions]);

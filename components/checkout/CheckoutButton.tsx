@@ -1,12 +1,14 @@
 "use client";
 
 import Script from "next/script";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { TierId } from "@/lib/payment/tiers";
 
 declare global { interface Window { Razorpay: new (options: Record<string, unknown>) => { open(): void } } }
 
 export function CheckoutButton({ tier, email }: { tier: TierId; email: string }) {
+  const router = useRouter();
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -23,7 +25,7 @@ export function CheckoutButton({ tier, email }: { tier: TierId; email: string })
       handler: async (payment: Record<string, string>) => {
         const verify = await fetch("/api/checkout/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payment) });
         if (!verify.ok) { const body = await verify.json(); setBusy(false); return setError(body.error ?? "Verification failed"); }
-        location.assign(`/welcome?order=${encodeURIComponent(order.orderId)}`);
+        router.push(`/welcome?order=${encodeURIComponent(order.orderId)}`);
       },
       modal: { ondismiss: () => setBusy(false) }, theme: { color: "#059669" },
     });
