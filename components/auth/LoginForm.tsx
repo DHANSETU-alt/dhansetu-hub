@@ -13,7 +13,7 @@ export function LoginForm() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const next = params.get("next");
-  const destination = next?.startsWith("/") && !next.startsWith("//") ? next : "/checkout?tier=founding_lifetime";
+  const destination = next?.startsWith("/") && !next.startsWith("//") ? next : "/checkout?tier=smartbudget_pro";
 
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setMessage("");

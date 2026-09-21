@@ -33,5 +33,5 @@ export async function hasEntitlement(userId: string) {
   if (testMode()) return testEntitled(userId);
   const { data, error } = await createAdminSupabase().from("profiles").select("plan").eq("id", userId).maybeSingle();
   if (error) throw new Error(`Could not read entitlement: ${error.message}`);
-  return data?.plan === "founding_lifetime";
+  return Boolean(data?.plan && data.plan !== "free");
 }

@@ -5,7 +5,7 @@ import { isTierId, TIERS } from "@/lib/payment/tiers";
 
 export const dynamic = "force-dynamic";
 export default async function CheckoutPage({ searchParams }: { searchParams: { tier?: string } }) {
-  const tier = isTierId(searchParams.tier) ? searchParams.tier : "founding_lifetime";
+  const tier = isTierId(searchParams.tier) ? searchParams.tier : "smartbudget_pro";
   const { data } = await createServerSupabase().auth.getUser();
   if (!data.user) redirect(`/login?next=${encodeURIComponent(`/checkout?tier=${tier}`)}`);
   const item = TIERS[tier];
