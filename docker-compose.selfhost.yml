@@ -6,7 +6,11 @@ services:
     environment:
       DHANSETU_STORAGE_ROOT: /mnt/dhansetu-data
     volumes:
-      - ${DHANSETU_STORAGE_ROOT:-/mnt/dhansetu-data}:/mnt/dhansetu-data
+      - type: bind
+        source: ${DHANSETU_STORAGE_ROOT:-/mnt/dhansetu-data}
+        target: /mnt/dhansetu-data
+        bind:
+          create_host_path: false
     entrypoint: ["/bin/sh", "-c"]
     command: ["/app/scripts/storage-guard.sh && exec node server.js"]
     ports:
