@@ -18,6 +18,20 @@ scripts/backup-local.sh
 npm run start
 ```
 
+For a boot-managed deployment, install `ops/dhansetu-selfhost.service` as
+`/etc/systemd/system/dhansetu-selfhost.service`, place non-Git secrets in
+`/etc/dhansetu/dhansetu.env`, and enable it only after the SSD is mounted:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now dhansetu-selfhost.service
+systemctl status dhansetu-selfhost.service
+```
+
+The unit requires the SSD mount and runs the storage guard before the
+standalone Next server. If the mount disappears, the service cannot write to
+the empty mount path and must be stopped for recovery.
+
 If the SSD is missing, the guard exits 78 and the service must not start. Reconnect and mount the SSD, run the guard, then restore or start the service. Verify the archive checksum before restoring. Database restore is a separately reviewed operation; no production database is overwritten by this runbook.
 
 ## Traffic cutover

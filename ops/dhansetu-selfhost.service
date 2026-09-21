@@ -1,0 +1,23 @@
+[Unit]
+Description=DhanSetu Hub self-hosted application
+After=network-online.target local-fs.target
+Wants=network-online.target
+RequiresMountsFor=/mnt/dhansetu-data
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/dhansetu-hub
+EnvironmentFile=/etc/dhansetu/dhansetu.env
+Environment=NODE_ENV=production
+Environment=PORT=3000
+ExecStartPre=/opt/dhansetu-hub/scripts/storage-guard.sh
+ExecStart=/usr/bin/node /opt/dhansetu-hub/.next/standalone/server.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/mnt/dhansetu-data
+
+[Install]
+WantedBy=multi-user.target
