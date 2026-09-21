@@ -46,7 +46,7 @@ export function parseStatement(text: string): Transaction[] {
   });
 }
 
-export function StatementImporter() {
+export function StatementImporter({ onImport }: { onImport?: (transactions: Transaction[]) => void }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [message, setMessage] = useState('No statement loaded.');
 
@@ -58,6 +58,7 @@ export function StatementImporter() {
     }
     const parsed = parseStatement(await file.text());
     setTransactions(parsed);
+    onImport?.(parsed);
     setMessage(parsed.length ? `${parsed.length} debit transactions imported locally. Nothing was uploaded.` : 'No supported debit rows found. Export Date, Description, and Debit/Amount columns.');
   }
 
