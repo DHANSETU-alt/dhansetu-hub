@@ -27,6 +27,16 @@ export function LoginForm() {
     router.replace(destination); router.refresh();
   }
 
+  async function signInWithGoogle() {
+    setBusy(true); setMessage("");
+    const supabase = createBrowserSupabase();
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(destination)}` },
+    });
+    if (error) { setBusy(false); setMessage(error.message); }
+  }
+
   return <form onSubmit={submit} className="mx-auto max-w-md space-y-5 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
     <h1 className="text-3xl font-bold text-slate-950">{mode === "login" ? "Sign in before payment" : "Create your account"}</h1>
     <p className="text-sm text-slate-600">Your purchase is permanently attached to this account.</p>
@@ -34,6 +44,8 @@ export function LoginForm() {
     <label className="block text-sm font-medium">Password<input className="mt-1 w-full rounded-lg border p-3" type="password" minLength={8} required value={password} onChange={(e) => setPassword(e.target.value)} /></label>
     {message && <p role="alert" className="text-sm text-rose-700">{message}</p>}
     <button disabled={busy} className="w-full rounded-lg bg-emerald-600 p-3 font-semibold text-white disabled:opacity-50">{busy ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}</button>
+    <div className="flex items-center gap-3 text-xs text-slate-400"><span className="h-px flex-1 bg-slate-200" />or<span className="h-px flex-1 bg-slate-200" /></div>
+    <button type="button" disabled={busy} onClick={() => void signInWithGoogle()} className="w-full rounded-lg border border-slate-300 bg-white p-3 font-semibold text-slate-800 disabled:opacity-50">Continue with Google</button>
     <button type="button" className="w-full text-sm text-emerald-700 underline" onClick={() => setMode(mode === "login" ? "signup" : "login")}>{mode === "login" ? "New here? Create an account" : "Already registered? Sign in"}</button>
   </form>;
 }
