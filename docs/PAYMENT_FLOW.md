@@ -40,4 +40,7 @@ RLS permits authenticated users to read only their own purchases. Browser roles 
 6. Confirm `/welcome` redirects, `/billing` contains one paid record, and `profiles.plan` is `founding_lifetime`.
 7. Run `npm run verify:payment` for the keyless regression suite. It generates valid and invalid HMACs and verifies authentication, idempotency, tamper resistance, and concurrent seat limits against a local-only backend.
 
-The automatic-entitlement migration is applied to the linked `moneytrack` project. Production deployment still requires the application host to be authorized and configured.
+The automatic-entitlement and product-catalog migrations are present in
+`supabase/migrations/` but have not been applied to the linked `moneytrack`
+production project. Production deployment and migration application remain
+explicit owner-gated actions; no live entitlement state is claimed here.
