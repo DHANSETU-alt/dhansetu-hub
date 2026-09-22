@@ -18,6 +18,22 @@ scripts/backup-local.sh
 npm run start
 ```
 
+Once `.env.selfhost` and the SSD mount are configured, use the single
+operator wrapper for the containerized service:
+
+```bash
+npm run selfhost -- start
+npm run selfhost -- health
+npm run selfhost -- status
+npm run selfhost -- backup
+npm run selfhost -- restore-test
+npm run selfhost -- stop
+```
+
+`npm run selfhost -- update` only rebuilds the local image with the current
+working tree. It does not pull code, push Git, alter DNS, or deploy to a
+third-party host.
+
 For a boot-managed deployment, install `ops/dhansetu-selfhost.service` as
 `/etc/systemd/system/dhansetu-selfhost.service`, place non-Git secrets in
 `/etc/dhansetu/dhansetu.env`, and enable it only after the SSD is mounted:
