@@ -32,6 +32,12 @@ The unit requires the SSD mount and runs the storage guard before the
 standalone Next server. If the mount disappears, the service cannot write to
 the empty mount path and must be stopped for recovery.
 
+`scripts/backup-local.sh` stores a repository archive, a durable-data archive
+(`app-data`, `postgres`, `documents`, and `logs`), checksums, and a metadata
+inventory under the SSD backup directory. It excludes the backup directory
+from the data archive and never copies service secrets. `ops/restore-test.sh`
+verifies both archives in a temporary directory without overwriting live data.
+
 If the SSD is missing, the guard exits 78 and the service must not start. Reconnect and mount the SSD, run the guard, then restore or start the service. Verify the archive checksum before restoring. Database restore is a separately reviewed operation; no production database is overwritten by this runbook.
 
 ## Traffic cutover

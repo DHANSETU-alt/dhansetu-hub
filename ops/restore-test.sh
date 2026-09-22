@@ -10,4 +10,7 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 tar -xzf "$latest"/repository-*.tar.gz -C "$tmp"
 test -f "$tmp/package.json"
+mkdir "$tmp/storage"
+tar -xzf "$latest/storage-data.tar.gz" -C "$tmp/storage"
+for dir in app-data postgres documents logs; do test -d "$tmp/storage/$dir"; done
 echo "Restore test passed for $latest"
