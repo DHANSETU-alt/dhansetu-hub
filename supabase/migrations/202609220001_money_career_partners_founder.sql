@@ -102,6 +102,20 @@ create policy gst_owner on public.gst_reconciliations for all to authenticated u
 drop policy if exists partner_self on public.partner_applications;
 create policy partner_self on public.partner_applications for insert to authenticated with check (auth.uid() = applicant_user_id);
 create policy partner_read_self on public.partner_applications for select to authenticated using (auth.uid() = applicant_user_id);
+drop policy if exists partner_delete_self on public.partner_applications;
+create policy partner_delete_self on public.partner_applications for delete to authenticated using (auth.uid() = applicant_user_id);
+
+create or replace function public.delete_my_workspace_data()
+returns void language plpgsql security invoker set search_path = public as $$
+begin
+  delete from public.partner_applications where applicant_user_id = auth.uid();
+  delete from public.gst_reconciliations where user_id = auth.uid();
+  delete from public.tax_estimates where user_id = auth.uid();
+  delete from public.money_transactions where user_id = auth.uid();
+  delete from public.budget_profiles where user_id = auth.uid();
+end; $$;
+revoke all on function public.delete_my_workspace_data() from public, anon;
+grant execute on function public.delete_my_workspace_data() to authenticated;
 drop policy if exists referral_self on public.referral_links;
 create policy referral_self on public.referral_links for select to authenticated using (exists (select 1 from public.partner_applications p where p.id = partner_id and p.applicant_user_id = auth.uid()));
 drop policy if exists commission_no_client_read on public.commission_events;
