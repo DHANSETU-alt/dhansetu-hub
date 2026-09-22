@@ -13,6 +13,7 @@ Last verified: 2026-09-22 (Asia/Kolkata)
 - Founder-only revenue command center backed by server-side user-ID allowlisting and actual database rows only.
 - Bounded daily research job restricted to approved official HTTPS sources, with deduplication, source dates, fingerprints, budget caps, and SSD guard.
 - Automatic Razorpay entitlement flow, idempotent grant migration, receipt module, billing view, legal consent, and payment regression harness.
+- Existing Supabase authentication now includes password-reset email flow, secure recovery-session password update, safe return-path validation, Google sign-in continuity, and explicit sign-out from Billing.
 - SSD-safe Docker Compose, standalone Next server, systemd unit, backup/restore scripts, and exact verified SSD UUID template.
 
 ## Locally verified
@@ -26,6 +27,7 @@ Last verified: 2026-09-22 (Asia/Kolkata)
 - Docker production image `dhansetu-hub:local`: built successfully.
 - Missing-SSD Compose test: refused startup because `/mnt/dhansetu-data` did not exist and did not create the path.
 - Local standalone smoke: `/`, `/partners`, `/api/health` returned 200; unauthenticated `/resume-ai` redirected to login.
+- Production build includes `/auth/reset`; typecheck, lint, unit tests, and payment regression tests pass after the auth update.
 - External SSD read-only inspection: Kingston `/dev/sda1`, ext4, UUID `9e8acd1d-2da8-4593-9a90-3b3cd1af3968`; existing GVC/DhanSetu backup found; SSD was safely unmounted afterward.
 
 ## Live verified on `https://dhansetuhub.in`
