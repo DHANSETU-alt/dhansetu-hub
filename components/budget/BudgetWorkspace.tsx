@@ -16,6 +16,7 @@ function fingerprint(transaction: Pick<BudgetTransaction, "date" | "merchant" | 
 export function BudgetWorkspace() {
   const [state, setState] = useState<BudgetState>(initial);
   const [hydrated, setHydrated] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<"checking" | "synced" | "local">("checking");
   const [merchant, setMerchant] = useState("");
   const [amount, setAmount] = useState("");
   const [direction, setDirection] = useState<Direction>("expense");
@@ -32,7 +33,30 @@ export function BudgetWorkspace() {
     }, 0);
     return () => window.clearTimeout(load);
   }, []);
+  useEffect(() => {
+    if (!hydrated) return;
+    let active = true;
+    void fetch("/api/smartbudget", { cache: "no-store" }).then(async (response) => {
+      if (!active) return;
+      if (!response.ok) { setSyncStatus("local"); return; }
+      const remote = await response.json() as { profile: Partial<BudgetState> | null; transactions: BudgetTransaction[] };
+      if (remote.profile || remote.transactions.length > 0) {
+        setState((current) => ({ ...current, ...remote.profile, transactions: remote.transactions }));
+      }
+      setSyncStatus("synced");
+    }).catch(() => { if (active) setSyncStatus("local"); });
+    return () => { active = false; };
+  }, [hydrated]);
   useEffect(() => { if (hydrated) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }, [hydrated, state]);
+  useEffect(() => {
+    if (!hydrated || syncStatus !== "synced") return;
+    const timer = window.setTimeout(() => {
+      void fetch("/api/smartbudget", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ profile: { income: state.income, cadence: state.cadence, householdSize: state.householdSize, fixed: state.fixed, variableBudget: state.variableBudget, savings: state.savings }, transactions: state.transactions }) }).then((response) => {
+        if (response.status === 401 || response.status === 503) setSyncStatus("local");
+      }).catch(() => setSyncStatus("local"));
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [hydrated, state, syncStatus]);
 
   const expenses = useMemo(() => state.transactions.filter((item) => item.direction === "expense").reduce((sum, item) => sum + item.amount, 0), [state.transactions]);
   const incomeTransactions = useMemo(() => state.transactions.filter((item) => item.direction === "income").reduce((sum, item) => sum + item.amount, 0), [state.transactions]);

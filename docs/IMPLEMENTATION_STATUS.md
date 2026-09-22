@@ -5,7 +5,7 @@ Last verified: 2026-09-22 (Asia/Kolkata)
 ## Implemented in the local feature branch
 
 - Mobile-first DhanSetu homepage, product navigation, legal pages, and partner disclosures.
-- SmartBudget workspace with manual transactions, CSV import/export, duplicate fingerprints, safe-to-spend calculations, and explainable LeakShield rules. Browser-local storage is intentional until the database migration is applied.
+- SmartBudget workspace with manual transactions, CSV import/export, duplicate fingerprints, safe-to-spend calculations, explainable LeakShield rules, and an authenticated sync API. Browser-local storage remains the safe fallback until the database migration is applied.
 - Versioned deterministic Indian salary tax estimator for supported ordinary cases, with explicit unsupported-case flags and rule-source references.
 - GST purchase-register/GSTR-2B reconciliation workspace with duplicate, missing, and value-mismatch review flags. It reports amount requiring review, not guaranteed recovery or filing.
 - Entitled Resume AI PDF/DOCX extraction route. Uploads are limited to 5 MB, processed in memory, protected by authentication and entitlement checks, and not persisted by this feature.
@@ -28,6 +28,7 @@ Last verified: 2026-09-22 (Asia/Kolkata)
 - Missing-SSD Compose test: refused startup because `/mnt/dhansetu-data` did not exist and did not create the path.
 - Local standalone smoke: `/`, `/partners`, `/api/health` returned 200; unauthenticated `/resume-ai` redirected to login.
 - Production build includes `/auth/reset`; typecheck, lint, unit tests, and payment regression tests pass after the auth update.
+- Production build includes `/api/smartbudget`; authenticated sync is locally verified at the route/build level, while live persistence remains unverified because the Supabase migration is not applied.
 - External SSD read-only inspection: Kingston `/dev/sda1`, ext4, UUID `9e8acd1d-2da8-4593-9a90-3b3cd1af3968`; existing GVC/DhanSetu backup found; SSD was safely unmounted afterward.
 
 ## Live verified on `https://dhansetuhub.in`
