@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createServerSupabase, hasSupabasePublicConfig } from "@/lib/supabase/server";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { LogoutButton } from "@/components/auth/LogoutButton";
 
 export const dynamic = "force-dynamic";
 export default async function BillingPage() {
+  if (!hasSupabasePublicConfig()) redirect("/login?next=/billing&error=auth_unavailable");
   const supabase = await createServerSupabase();
   const { data } = await supabase.auth.getUser();
   if (!data.user) redirect("/login?next=/billing");

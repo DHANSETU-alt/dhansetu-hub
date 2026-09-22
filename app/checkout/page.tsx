@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createServerSupabase, hasSupabasePublicConfig } from "@/lib/supabase/server";
 import { CheckoutButton } from "@/components/checkout/CheckoutButton";
 import { isTierId, TIERS } from "@/lib/payment/tiers";
 
@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 export default async function CheckoutPage({ searchParams }: { searchParams: Promise<{ tier?: string }> }) {
   const params = await searchParams;
   const tier = isTierId(params.tier) ? params.tier : "smartbudget_pro";
+  if (!hasSupabasePublicConfig()) redirect(`/login?next=${encodeURIComponent(`/checkout?tier=${tier}`)}&error=auth_unavailable`);
   const supabase = await createServerSupabase();
   const { data } = await supabase.auth.getUser();
   if (!data.user) redirect(`/login?next=${encodeURIComponent(`/checkout?tier=${tier}`)}`);

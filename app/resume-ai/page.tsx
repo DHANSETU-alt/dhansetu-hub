@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
 import { ResumeWorkspace } from "@/components/resume/ResumeWorkspace";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createServerSupabase, hasSupabasePublicConfig } from "@/lib/supabase/server";
 import { hasEntitlement } from "@/lib/payment/entitlement";
 
 export const dynamic = "force-dynamic";
 
 export default async function ResumeAiPage() {
+  if (!hasSupabasePublicConfig()) redirect("/login?next=/resume-ai&error=auth_unavailable");
   const supabase = await createServerSupabase();
   const { data } = await supabase.auth.getUser();
   if (!data.user) redirect("/login?next=/resume-ai");
