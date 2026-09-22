@@ -12,13 +12,11 @@ export async function GET() {
     'RAZORPAY_KEY_SECRET',
     'RAZORPAY_WEBHOOK_SECRET',
   ];
-  const configuration = Object.fromEntries(required.map((name) => [name, Boolean(process.env[name])]));
-  const paymentReady = required.every((name) => configuration[name]);
+  const paymentReady = required.every((name) => Boolean(process.env[name]));
   return NextResponse.json({
     status: 'ok',
     service: 'dhansetu-hub',
     timestamp: new Date().toISOString(),
     paymentReady,
-    configuration,
   }, { headers: { 'Cache-Control': 'no-store' } });
 }
