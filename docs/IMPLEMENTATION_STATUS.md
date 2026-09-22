@@ -29,6 +29,7 @@ Last verified: 2026-09-22 (Asia/Kolkata)
 - Local standalone smoke: `/`, `/partners`, `/api/health` returned 200; unauthenticated `/resume-ai` redirected to login.
 - Production build includes `/auth/reset`; typecheck, lint, unit tests, and payment regression tests pass after the auth update.
 - Production build includes `/api/smartbudget`; authenticated sync is locally verified at the route/build level, while live persistence remains unverified because the Supabase migration is not applied.
+- Daily research smoke test succeeded in temporary storage: the first run produced one finding and the second produced zero duplicate findings, with digest and state artifacts written. Production execution remains SSD-guarded.
 - External SSD read-only inspection: Kingston `/dev/sda1`, ext4, UUID `9e8acd1d-2da8-4593-9a90-3b3cd1af3968`; existing GVC/DhanSetu backup found; SSD was safely unmounted afterward.
 
 ## Live verified on `https://dhansetuhub.in`
