@@ -13,7 +13,7 @@ if [[ -n "$(git status --porcelain)" ]]; then fail "working tree is dirty"; else
 if [[ "$branch" == "main" || "$branch" == "master" ]]; then fail "release branch is $branch"; else pass "release branch $branch"; fi
 if [[ -s .next/BUILD_ID ]]; then pass "production build artifact exists"; else fail "production build artifact missing"; fi
 
-if git grep -n -I -E 'rzp_live_[A-Za-z0-9]+|sk_live_[A-Za-z0-9]+|SUPABASE_SERVICE_ROLE_KEY=ey' -- ':!package-lock.json' >/tmp/dhansetu-release-secret-scan.out 2>/dev/null; then
+if git grep -n -I -E 'rzp_live_[A-Za-z0-9]+|sk_live_[A-Za-z0-9]+|SUPABASE_SERVICE_ROLE_KEY=ey' -- ':!package-lock.json' ':!scripts/release-readiness.sh' >/tmp/dhansetu-release-secret-scan.out 2>/dev/null; then
   fail "live secret pattern found"
 else
   pass "no live secret pattern committed"
