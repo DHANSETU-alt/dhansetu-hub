@@ -34,6 +34,10 @@ npm run selfhost -- stop
 working tree. It does not pull code, push Git, alter DNS, or deploy to a
 third-party host.
 
+Before any owner-approved release, run `npm run release:check`. Set
+`BASE_URL=https://dhansetuhub.in` to include live probes; the check must report
+`/api/smartbudget` as `401` for unauthenticated access, not `404`.
+
 For a boot-managed deployment, install `ops/dhansetu-selfhost.service` as
 `/etc/systemd/system/dhansetu-selfhost.service`, place non-Git secrets in
 `/etc/dhansetu/dhansetu.env`, and enable it only after the SSD is mounted:

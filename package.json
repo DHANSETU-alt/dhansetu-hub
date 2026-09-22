@@ -8,6 +8,7 @@
     "start": "node .next/standalone/server.js",
     "lint": "eslint .",
     "selfhost": "bash scripts/selfhost.sh",
+    "release:check": "bash scripts/release-readiness.sh",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "verify:payment": "tsx scripts/verify-payment-flow.ts",
