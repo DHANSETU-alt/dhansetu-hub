@@ -74,7 +74,14 @@ export function BudgetWorkspace() {
     setMerchant(""); setAmount(""); setDirection("expense"); setCategory("Everyday"); setEditingId(null);
   }
   function editTransaction(item: BudgetTransaction) { setEditingId(item.id); setMerchant(item.merchant); setAmount(String(item.amount)); setDirection(item.direction); setCategory(item.category); }
-  function deleteTransaction(id: string) { setState((current) => ({ ...current, transactions: current.transactions.filter((item) => item.id !== id) })); if (editingId === id) { setEditingId(null); setMerchant(""); setAmount(""); } }
+  async function deleteTransaction(id: string) {
+    if (syncStatus === "synced") {
+      const response = await fetch(`/api/smartbudget/transactions/${id}`, { method: "DELETE" });
+      if (!response.ok) setSyncStatus("local");
+    }
+    setState((current) => ({ ...current, transactions: current.transactions.filter((item) => item.id !== id) }));
+    if (editingId === id) { setEditingId(null); setMerchant(""); setAmount(""); }
+  }
   function exportData() { const rows = ["date,merchant,amount,direction,category,source", ...state.transactions.map((item) => [item.date.slice(0, 10), item.merchant, item.amount, item.direction, item.category, item.source].map((cell) => JSON.stringify(cell)).join(","))]; const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([rows.join("\n")], { type: "text/csv" })); link.download = "dhansetu-smartbudget.csv"; link.click(); URL.revokeObjectURL(link.href); }
 
   return <div className="space-y-6">
