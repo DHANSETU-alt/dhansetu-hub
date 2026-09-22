@@ -7,6 +7,9 @@ export const dynamic = "force-dynamic";
 function money(paise: number) { return `₹${(paise / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`; }
 
 async function readFounderData() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return { gross: 0, cost: 0, commission: 0, net: 0, paidOrders: 0, customers: 0, transactionCount: 0, warnings: ["Founder data is unavailable until Supabase server configuration is present"] };
+  }
   const admin = createAdminSupabase();
   const [purchases, expenses, commissions, customers, activity] = await Promise.all([
     admin.from("purchases").select("amount_paise,status,razorpay_payment_id,created_at,paid_at").eq("status", "paid").order("paid_at", { ascending: false }).limit(500),
