@@ -25,7 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 from . import ceo as ceo_mod
-from . import config, db, finance, initiatives, pa_angella, security, sentinel, voice, website_health
+from . import config, db, finance, initiatives, pa_angella, personal_plane, security, sentinel, voice, website_health
 
 import psutil
 
@@ -70,6 +70,30 @@ def route(path):
 def _qs_int(qs, key):
     val = qs.get(key, [None])[0]
     return int(val) if val is not None else None
+
+
+def _actor(qs):
+    return qs.get("actor_id", ["owner"])[0], qs.get("actor_role", ["Owner"])[0]
+
+
+@route("/api/personal/goals")
+def personal_goals(qs):
+    actor_id, _ = _actor(qs)
+    return {"goals": personal_plane.list_goals(actor_id)}
+
+
+@route("/api/personal/tasks")
+def personal_tasks(qs):
+    actor_id, _ = _actor(qs)
+    return {"tasks": personal_plane.list_tasks(actor_id, qs.get("status", [None])[0])}
+
+
+@route("/api/personal/reminders/due")
+def personal_due_reminders(qs):
+    from datetime import datetime, timezone
+    actor_id, _ = _actor(qs)
+    through = qs.get("through", [datetime.now(timezone.utc).isoformat()])[0]
+    return {"reminders": personal_plane.list_due_reminders(actor_id, through)}
 
 
 @route("/api/overview")
@@ -167,6 +191,12 @@ def agents(qs):
     for r in rows:
         r["allowed_tools"] = json.loads(r["allowed_tools"] or "[]")
     return {"agents": rows}
+
+
+@route("/api/agent-reality")
+def agent_reality(qs):
+    with db.get_conn() as conn:
+        return db.agent_reality_summary(conn)
 
 
 @route("/api/agent-health")
@@ -595,6 +625,38 @@ def command_center_logs(qs):
         return {"events": db.recent_task_events(conn, limit=_qs_int(qs, "limit") or 50)}
 
 
+@route("/api/jarvis/route")
+def jarvis_route(qs):
+    """Return a deterministic, explainable specialist preview before dispatch."""
+    goal = (qs.get("text", [""])[0] or "").strip()
+    if not goal:
+        return {"error": "empty mission"}
+    from .routing import classify_risk
+    lowered = goal.lower()
+    keyword_groups = {
+        "security": ("security", "vulnerability", "credential", "secret"),
+        "website": ("site", "website", "launch", "domain", "dashboard"),
+        "marketing": ("market", "campaign", "content", "customer", "sales"),
+        "finance": ("finance", "payment", "revenue", "budget", "invoice"),
+        "qa": ("check", "verify", "test", "audit", "review"),
+    }
+    with db.get_conn() as conn:
+        agents = db.list_agents(conn)
+    chosen = None
+    for group, keywords in keyword_groups.items():
+        if any(keyword in lowered for keyword in keywords):
+            chosen = next((agent for agent in agents if group in agent["id"].lower() or group in agent["name"].lower()), None)
+            if chosen:
+                break
+    chosen = chosen or next((agent for agent in agents if agent["id"] == "ceo"), None) or (agents[0] if agents else None)
+    if not chosen:
+        return {"error": "no registered agents"}
+    risk = classify_risk(goal)
+    from .jarvis_mediator import build_professional_task
+    agent_view = {"id": chosen["id"], "name": chosen["name"], "layer": chosen["layer"], "allowed_tools": json.loads(chosen["allowed_tools"] or "[]")}
+    return {"risk": risk, "agent": agent_view, "professional_task": build_professional_task(goal, agent_view, risk)}
+
+
 @route("/api/initiatives")
 def initiatives_list(qs):
     status = qs.get("status", [None])[0]
@@ -785,6 +847,102 @@ def mac_runtime(qs):
     }
 
 
+# Real Linux compute node (gvc-ops-ai, 192.168.31.27), 2026-09-13 -- the
+# founder's own machine, connected over the local network via a real,
+# already-working SSH keypair (~/.ssh/shakthi_bridge_ed25519). Same
+# discipline as mac_runtime() above: every field is a live sample taken
+# THIS request, over a real SSH round-trip -- if the machine is
+# unreachable, `reachable` is false and every other field is null, never a
+# fabricated number. No new service runs on Linux for this; the Mac stays
+# the one place querying/deciding, matching the founder's explicit
+# "authority stays on Mac" architecture.
+_LINUX_NODE_HOST = "blackboxops@192.168.31.27"
+_LINUX_NODE_KEY = str(Path.home() / ".ssh" / "shakthi_bridge_ed25519")
+_LINUX_REMOTE_SCRIPT = """
+import json, os, socket, platform, time, subprocess
+import psutil
+vm = psutil.virtual_memory()
+disk = psutil.disk_usage('/')
+
+# Real external backup SSD (/dev/sda1), 2026-09-13 -- reported honestly:
+# real usage if actually mounted at /mnt/backup_ssd, otherwise just its
+# real raw capacity (from the kernel's own block-device size file) with
+# mounted=false. Never a fabricated used/free split for an unmounted disk.
+ext_storage = {"present": False}
+try:
+    with open("/sys/class/block/sda/size") as f:
+        sectors = int(f.read().strip())
+    ext_storage = {"present": True, "mounted": False, "total_bytes": sectors * 512, "used_bytes": None, "free_bytes": None, "percent": None}
+    if os.path.ismount("/mnt/backup_ssd"):
+        ext = psutil.disk_usage("/mnt/backup_ssd")
+        ext_storage.update({"mounted": True, "total_bytes": ext.total, "used_bytes": ext.used, "free_bytes": ext.free, "percent": round(ext.percent, 1)})
+except FileNotFoundError:
+    pass
+
+gpu = {"state": "UNAVAILABLE", "name": None, "reason": "no nvidia-smi found"}
+try:
+    out = subprocess.run(
+        ["nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu",
+         "--format=csv,noheader,nounits"],
+        capture_output=True, text=True, timeout=4,
+    )
+    if out.returncode == 0 and out.stdout.strip():
+        name, util, mem_used, mem_total, temp = [p.strip() for p in out.stdout.strip().split(",")]
+        gpu = {
+            "state": "CONNECTED", "name": name,
+            "utilization_percent": float(util), "mem_used_mb": float(mem_used),
+            "mem_total_mb": float(mem_total), "temperature_c": float(temp),
+        }
+except FileNotFoundError:
+    pass
+except Exception as e:
+    gpu = {"state": "DRIVER_ERROR", "name": None, "reason": str(e)}
+print(json.dumps({
+    "hostname": socket.gethostname(), "os": platform.system(), "kernel": platform.release(),
+    "architecture": platform.machine(), "logical_cpus": psutil.cpu_count(),
+    "cpu_percent": round(psutil.cpu_percent(interval=0.3), 1),
+    "ram_percent": round(vm.percent, 1), "ram_total_bytes": vm.total,
+    "disk_percent": round(disk.percent, 1), "disk_free_bytes": disk.free, "disk_total_bytes": disk.total,
+    "ext_storage": ext_storage,
+    "uptime_seconds": round(time.time() - psutil.boot_time()), "gpu": gpu,
+}))
+"""
+
+
+@route("/api/linux/runtime")
+def linux_runtime(qs):
+    """Real Linux compute-node status, sampled live over SSH every request.
+
+    See the module-level comment above _LINUX_NODE_HOST -- reachable=false
+    with every stat null is the honest answer when the SSH round-trip
+    fails, never a cached or invented last-known value.
+    """
+    import subprocess
+
+    try:
+        # Real bug found+fixed 2026-09-13: passing the script as a `-c`
+        # argument let SSH's remote shell try to parse its newlines/quotes
+        # before python3 ever saw it (concrete failure: "bash: line 2:
+        # import: command not found"). Piping it over stdin to `python3 -`
+        # instead sidesteps shell quoting entirely -- no string embedding,
+        # no escaping to get wrong.
+        result = subprocess.run(
+            ["ssh", "-i", _LINUX_NODE_KEY, "-o", "BatchMode=yes", "-o", "ConnectTimeout=4",
+             "-o", "StrictHostKeyChecking=accept-new", _LINUX_NODE_HOST, "python3", "-"],
+            input=_LINUX_REMOTE_SCRIPT, capture_output=True, text=True, timeout=8,
+        )
+        if result.returncode != 0:
+            return {"reachable": False, "sampled_at": time.time(), "error": (result.stderr or "SSH failed").strip()[:300]}
+        stats = json.loads(result.stdout.strip())
+        stats["reachable"] = True
+        stats["sampled_at"] = time.time()
+        return stats
+    except subprocess.TimeoutExpired:
+        return {"reachable": False, "sampled_at": time.time(), "error": "SSH timed out (Linux node unreachable)"}
+    except Exception as e:
+        return {"reachable": False, "sampled_at": time.time(), "error": str(e)[:300]}
+
+
 @route("/api/v31/missions")
 def v31_missions(qs):
     from shakthi.missions import MissionStore
@@ -857,6 +1015,34 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 pass
             self._send(500, {"error": str(e)})
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if API_TOKEN and self.client_address[0] not in LOOPBACK_ADDRESSES:
+            supplied = self.headers.get("X-Shakthi-Token", "")
+            if supplied != API_TOKEN:
+                self._send(401, {"error": "missing or invalid token"})
+                return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            body = json.loads(self.rfile.read(length) or b"{}")
+            actor_id = body.get("actor_id", "owner")
+            actor_role = body.get("actor_role", "Owner")
+            request_id = body.get("request_id")
+            if parsed.path == "/api/personal/goals":
+                result = personal_plane.create_goal(body.get("title", ""), actor_id, actor_role, request_id)
+            elif parsed.path == "/api/personal/tasks":
+                result = personal_plane.create_task(body.get("title", ""), body.get("goal_id"), actor_id, actor_role, request_id)
+            elif parsed.path == "/api/personal/reminders":
+                result = personal_plane.create_reminder(body.get("title", ""), body.get("due_at", ""), actor_id, actor_role, request_id)
+            else:
+                self._send(404, {"error": f"no such route: {parsed.path}"})
+                return
+            self._send(201, result)
+        except (ValueError, PermissionError, json.JSONDecodeError) as exc:
+            self._send(400 if not isinstance(exc, PermissionError) else 403, {"error": str(exc)})
+        except Exception as exc:
+            self._send(500, {"error": str(exc)})
 
     def _send(self, status, payload):
         body = json.dumps(payload, default=str).encode()
