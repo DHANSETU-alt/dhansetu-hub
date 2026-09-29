@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@1,400;1,500;1,600&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -5,6 +6,8 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  --font-geist-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-geist-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   --bg: #f4f5f2;
   --surface: #ffffff;
   --surface-2: #eceee9;
@@ -109,6 +112,19 @@ body {
   min-height: 100vh;
 }
 
+.font-playfair { font-family: 'Playfair Display', serif; }
+.dhansetu-landing { font-family: 'Inter', sans-serif; }
+.hero-anim { opacity: 0; animation-fill-mode: forwards; animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes heroReveal { 0% { opacity: 0; transform: translateY(28px); filter: blur(12px); } 100% { opacity: 1; transform: translateY(0); filter: blur(0); } }
+@keyframes heroFadeUp { 0% { opacity: 0; transform: translateY(20px); } 100% { opacity: 1; transform: translateY(0); } }
+.hero-reveal { animation: heroReveal 1.1s forwards; }
+.hero-fade { animation: heroFadeUp 1s forwards; animation-delay: .7s; }
+.coin-rain { position: absolute; inset: 0; overflow: hidden; opacity: .55; pointer-events: none; }
+.coin-rain > span { position: absolute; top: -8%; display: grid; place-items: center; border: 1px solid rgba(232,173,86,.5); border-radius: 999px; color: rgba(232,173,86,.8); font-size: 9px; animation: coinFall linear infinite; box-shadow: 0 0 18px rgba(232,173,86,.12); }
+@keyframes coinFall { 0% { transform: translate3d(0,-10vh,0) rotate(0deg); opacity: 0; } 12% { opacity: .8; } 100% { transform: translate3d(90px,115vh,0) rotate(540deg); opacity: 0; } }
+.dhansetu-spotlight { position: absolute; z-index: 2; width: 520px; height: 520px; pointer-events: none; transform: translate(-50%,-50%); border-radius: 50%; background: radial-gradient(circle, rgba(121,226,162,.2), rgba(121,226,162,.06) 38%, transparent 70%); filter: blur(8px); mix-blend-mode: screen; transition: opacity .2s; }
+@media (prefers-reduced-motion: reduce) { .hero-anim { animation: none; opacity: 1; } .coin-rain { display: none; } .dhansetu-spotlight { display: none; } }
+
 /* Ambient color for the glass panels to actually refract -- flat blur over
    a flat background reads as nothing. Fixed so it doesn't scroll away;
    low-opacity so it stays atmosphere, not decoration competing for
@@ -135,6 +151,23 @@ body::before {
   backdrop-filter: blur(16px) saturate(140%);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
 }
+
+/* Zoeyos-inspired restructure, 2026-09-10: a thin top accent bar + corner
+   brackets on cards and stat tiles -- the "HUD panel" language already
+   proven on /concept3, applied to the shared primitives so it reaches the
+   real default dashboard instead of staying stuck on one experimental
+   route. No new dependency, just border/pseudo-element CSS. */
+.hud-card { position: relative; border-top: 2px solid var(--local); }
+.hud-tile {
+  position: relative;
+  border-top: 2px solid color-mix(in srgb, var(--local) 70%, transparent);
+}
+.hud-tile::before, .hud-tile::after {
+  content: ""; position: absolute; width: 8px; height: 8px;
+  border-color: var(--local); opacity: 0.55; pointer-events: none;
+}
+.hud-tile::before { top: -1px; left: -1px; border-top: 1.5px solid; border-left: 1.5px solid; }
+.hud-tile::after { bottom: -1px; right: -1px; border-bottom: 1.5px solid; border-right: 1.5px solid; }
 
 .font-mono-num { font-variant-numeric: tabular-nums; font-family: var(--font-geist-mono), ui-monospace, monospace; }
 
