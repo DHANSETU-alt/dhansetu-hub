@@ -60,7 +60,17 @@ export function JarvisVoiceControl() {
     setDemoPhase("LISTENING");
     demoTimersRef.current = [
       window.setTimeout(() => setDemoPhase("INTERPRETING"), 1500),
-      window.setTimeout(() => { setReply("Good evening. I found 58 registered agents and no active tasks. The database is healthy and disk usage is 21 percent. Memory usage is 23 percent. Ollama is currently offline, internet connectivity is unavailable, and the current health score is 30 out of 100."); setDemoPhase("SPEAKING"); }, 3000),
+      window.setTimeout(() => {
+        const briefing = "Good evening. I found 58 registered agents and no active tasks. The database is healthy and disk usage is 21 percent. Memory usage is 23 percent. Ollama is currently offline, internet connectivity is unavailable, and the current health score is 30 out of 100.";
+        setReply(briefing); setDemoPhase("SPEAKING");
+        if ("speechSynthesis" in window) {
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(briefing);
+          utterance.lang = LANGS[language].speech;
+          utterance.onend = () => setDemoPhase("IDLE");
+          window.speechSynthesis.speak(utterance);
+        }
+      }, 3000),
       window.setTimeout(() => setDemoPhase("IDLE"), 4800),
       window.setTimeout(() => setDemoPhase(null), 6000),
     ];
