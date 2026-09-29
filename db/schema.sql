@@ -11,6 +11,51 @@ CREATE TABLE IF NOT EXISTS businesses (
   name TEXT NOT NULL
 );
 
+-- Jarvis personal command plane. Kept separate from agent execution tasks so
+-- personal planning remains understandable and independently auditable.
+CREATE TABLE IF NOT EXISTS personal_goals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  owner_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  request_id TEXT UNIQUE,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS personal_tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  goal_id INTEGER REFERENCES personal_goals(id),
+  owner_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  request_id TEXT UNIQUE,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  completed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS personal_reminders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  due_at TEXT NOT NULL,
+  owner_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  request_id TEXT UNIQUE,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS personal_audit_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor_id TEXT NOT NULL,
+  actor_role TEXT NOT NULL,
+  action TEXT NOT NULL,
+  object_type TEXT NOT NULL,
+  object_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS personal_tasks_owner_status_idx ON personal_tasks(owner_id, status);
+CREATE INDEX IF NOT EXISTS personal_reminders_due_idx ON personal_reminders(owner_id, status, due_at);
+
 CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY,
   layer TEXT NOT NULL,
@@ -51,6 +96,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   status TEXT NOT NULL DEFAULT 'pending',      -- pending | done | failed
   risk_level TEXT NOT NULL DEFAULT 'normal',   -- normal | critical
   result TEXT,
+  verification_status TEXT NOT NULL DEFAULT 'unverified', -- unverified | verified | rejected
+  verified_by TEXT,
+  verified_at TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -307,6 +355,8 @@ CREATE TABLE IF NOT EXISTS system_health (
   untriaged_errors INTEGER,
   health_score INTEGER,        -- 0-100
   performance_score INTEGER,   -- 0-100
+  top_process_cpu_percent REAL, -- single hottest process, catches a runaway process aggregate CPU can hide (2026-09-16)
+  top_process_name TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -468,6 +518,7 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   gateway TEXT NOT NULL,       -- razorpay_subscription | stripe_checkout | upi
   gateway_ref TEXT,            -- the gateway's own id -- NULL for UPI (no account/API involved)
+  payment_id TEXT,             -- provider payment id, when available
   amount REAL,
   currency TEXT NOT NULL DEFAULT 'INR',
   description TEXT NOT NULL,
@@ -478,6 +529,7 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
   url_or_link TEXT,             -- checkout URL / UPI deep link
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE UNIQUE INDEX IF NOT EXISTS payment_transactions_gateway_ref_uq ON payment_transactions(gateway, gateway_ref) WHERE gateway_ref IS NOT NULL;
 
 -- SHAKTHI Worker Pool -- execution/concurrency layer, NOT a decision-
 -- maker. Workers never call ceo.decide() themselves and never approve/
@@ -572,6 +624,7 @@ CREATE TABLE IF NOT EXISTS product_subscriptions (
   gateway_ref TEXT,               -- payment link id / PayU txnid
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE UNIQUE INDEX IF NOT EXISTS product_subscriptions_gateway_ref_uq ON product_subscriptions(gateway, gateway_ref) WHERE gateway_ref IS NOT NULL;
 
 -- Sales agent activation. A lead is the real trigger every sales.py
 -- function hangs off of -- ingest_lead() is the "new lead / inbound / CRM
@@ -810,6 +863,8 @@ CREATE TABLE IF NOT EXISTS failure_analyses (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   source_type TEXT NOT NULL,               -- bug | task_failure | incident | manual
   source_id INTEGER,                       -- id in the relevant table, if applicable
+  agent_id TEXT REFERENCES agents(id),     -- which agent's work this failure traces to,
+                                            -- if known (v3.4 error-proofing plan)
   title TEXT NOT NULL,
   severity TEXT NOT NULL DEFAULT 'P2',     -- same P0-P4 scale as bugs.severity
   summary TEXT NOT NULL,
