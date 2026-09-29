@@ -19,10 +19,10 @@ type Language = keyof typeof LANGS;
 type Phase = "IDLE" | "LISTENING" | "INTERPRETING" | "SPEAKING" | "ERROR";
 
 const PHASE_UI: Record<Phase, { title: string; detail: string; color: string }> = {
-  IDLE: { title: "READY", detail: "Tap Talk to Jarvis and speak", color: "text-[var(--local)]" },
+  IDLE: { title: "READY", detail: "Tap Talk to Shakthi_Agent and speak", color: "text-[var(--local)]" },
   LISTENING: { title: "HEARING YOU", detail: "Speak now — your words will appear below", color: "text-cyan-300" },
   INTERPRETING: { title: "UNDERSTANDING", detail: "Prompt Master is structuring your request", color: "text-amber-300" },
-  SPEAKING: { title: "RESPONDING", detail: "Jarvis is speaking the OS response", color: "text-emerald-300" },
+  SPEAKING: { title: "RESPONDING", detail: "Shakthi_Agent is speaking the OS response", color: "text-emerald-300" },
   ERROR: { title: "CONNECTION ISSUE", detail: "Read the message below or use typed input", color: "text-[var(--bad)]" },
 };
 
@@ -54,13 +54,13 @@ export function JarvisVoiceControl() {
 
   function previewAnimation() {
     stopDemo();
-    setTranscript("Show my priority tasks for today");
+    setTranscript("Shakthi, give me my OS briefing");
     setReply("");
     setError("");
     setDemoPhase("LISTENING");
     demoTimersRef.current = [
       window.setTimeout(() => setDemoPhase("INTERPRETING"), 1500),
-      window.setTimeout(() => { setReply("Demo response: I found your priority tasks and prepared the mission summary."); setDemoPhase("SPEAKING"); }, 3000),
+      window.setTimeout(() => { setReply("Good evening. I found 58 registered agents and no active tasks. The database is healthy and disk usage is 21 percent. Memory usage is 23 percent. Ollama is currently offline, internet connectivity is unavailable, and the current health score is 30 out of 100."); setDemoPhase("SPEAKING"); }, 3000),
       window.setTimeout(() => setDemoPhase("IDLE"), 4800),
       window.setTimeout(() => setDemoPhase(null), 6000),
     ];
@@ -111,7 +111,7 @@ export function JarvisVoiceControl() {
   return (
     <div className="rounded-xl border border-[var(--local)]/30 bg-[var(--surface)]/85 p-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div><h2 className="text-base font-semibold">Talk to Jarvis</h2><p className="mt-1 text-xs text-[var(--muted-foreground)]">Prompt Master → Guest permission gate → SHAKTHI action → spoken response</p></div>
+        <div><h2 className="text-base font-semibold">Talk to Shakthi_Agent</h2><p className="mt-1 text-xs text-[var(--muted-foreground)]">Prompt Master → Guest permission gate → SHAKTHI action → spoken response</p></div>
         <div className="flex flex-wrap gap-2">{(Object.keys(LANGS) as Language[]).map((code) => <button key={code} onClick={() => setLanguage(code)} className={`rounded-full border px-3 py-1 text-xs ${language === code ? "border-[var(--local)] text-[var(--local)]" : "border-[var(--border)] text-[var(--muted-foreground)]"}`}>{LANGS[code].label}</button>)}</div>
       </div>
       <div className="relative mt-6 overflow-hidden rounded-2xl border border-[var(--local)]/25 bg-black/50 px-4 py-7 text-center">
@@ -132,7 +132,7 @@ export function JarvisVoiceControl() {
         </div>
       </div>
       <div className="mt-5 flex flex-wrap items-center gap-3">
-        <button onClick={phase === "LISTENING" || phase === "SPEAKING" ? stop : listen} disabled={phase === "INTERPRETING"} className="rounded-full border border-[var(--local)] bg-[var(--local-soft)] px-5 py-2 text-sm font-semibold text-[var(--local)] disabled:opacity-50">{phase === "LISTENING" ? "Stop listening" : phase === "INTERPRETING" ? "Interpreting…" : phase === "SPEAKING" ? "Stop speaking" : "Talk to Jarvis"}</button>
+        <button onClick={phase === "LISTENING" || phase === "SPEAKING" ? stop : listen} disabled={phase === "INTERPRETING"} className="rounded-full border border-[var(--local)] bg-[var(--local-soft)] px-5 py-2 text-sm font-semibold text-[var(--local)] disabled:opacity-50">{phase === "LISTENING" ? "Stop listening" : phase === "INTERPRETING" ? "Interpreting…" : phase === "SPEAKING" ? "Stop speaking" : "Talk to Shakthi_Agent"}</button>
         <button type="button" onClick={previewAnimation} className="rounded-full border border-amber-400/30 px-4 py-2 text-xs text-amber-300">Preview animation</button>
         <span className="font-mono text-xs text-[var(--muted-foreground)]">REAL STATE: {phase}</span>
       </div>
@@ -140,7 +140,7 @@ export function JarvisVoiceControl() {
         <input value={transcript} onChange={(event) => setTranscript(event.target.value)} placeholder="Or type: Shakthi, show system status" className="min-w-0 flex-1 rounded-md border border-[var(--border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-[var(--local)]" />
         <button className="rounded-md border border-[var(--border)] px-4 py-2 text-sm" type="submit">Send</button>
       </form>
-      {reply && <p className="mt-4 rounded-md bg-[var(--surface-2)] p-3 text-sm">Jarvis: {reply}</p>}
+      {reply && <p className="mt-4 rounded-md bg-[var(--surface-2)] p-3 text-sm">Shakthi_Agent: {reply}</p>}
       {error && <p className="mt-4 text-sm text-[var(--bad)]">{error}</p>}
       {demoPhase && <p className="mt-3 rounded-md border border-amber-400/20 bg-amber-400/5 p-2 text-[11px] text-amber-200">UI DEMO ONLY — no microphone input, OS action, or agent activity is occurring.</p>}
       <p className="mt-3 text-[11px] text-[var(--muted-foreground)]">Browser microphone permission is requested on first use. Owner-restricted commands remain unavailable until secure owner authentication is configured.</p>
