@@ -57,6 +57,8 @@ def init_db():
         _migrate_task_verification_columns(conn)
         _migrate_failure_analyses_agent_column(conn)
         _migrate_payment_transaction_columns(conn)
+        # Phase 2 Authentication: users and sessions tables are created via schema.sql
+        # (CREATE TABLE IF NOT EXISTS), so no migration function needed
 
 
 def _migrate_payment_transaction_columns(conn):
