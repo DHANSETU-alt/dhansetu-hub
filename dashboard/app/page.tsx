@@ -79,6 +79,7 @@ export default async function ExecutiveDashboard() {
       </div>
 
       <nav className="work-shortcuts" aria-label="Working areas">
+        <Link href="/founder-dashboard"><strong>Founder Dashboard</strong><small>12 workspaces for CEO delegation, agent oversight, and metrics</small></Link>
         <Link href="/initiatives"><strong>Founder tasks</strong><small>Review pending work and initiative status</small></Link>
         <Link href="/tasks"><strong>Task pipeline</strong><small>Inspect execution records and results</small></Link>
         <Link href="/command-center"><strong>Issue a command</strong><small>Submit work through the existing controls</small></Link>

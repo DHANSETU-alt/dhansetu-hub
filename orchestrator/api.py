@@ -26,6 +26,7 @@ from urllib.parse import urlparse, parse_qs
 
 from . import ceo as ceo_mod
 from . import config, db, finance, initiatives, pa_angella, personal_plane, security, sentinel, voice, website_health
+from .jobs import research_daily, publish_content
 
 import psutil
 
@@ -975,6 +976,72 @@ def v31_governance(qs):
         "autonomy_levels": [{"name": level.name, "value": int(level)} for level in AutonomyLevel],
         "truth_states": [state.value for state in TruthState],
     }
+
+
+# Research Automation & Content Publishing Pipeline (Tasks #8+10)
+
+@route("/api/research/fetch")
+def research_fetch(qs):
+    """Manual trigger for daily research job."""
+    business_id = _qs_int(qs, "business_id") or 1
+    generator = research_daily.InsightGenerator()
+    result = generator.run(business_id)
+    return result
+
+
+@route("/api/research/preview")
+def research_preview(qs):
+    """Preview content conversion without publishing."""
+    business_id = _qs_int(qs, "business_id") or 1
+    publisher = publish_content.ContentPublisher()
+    result = publisher.run(business_id, dry_run=True)
+    return result
+
+
+@route("/api/research/insights")
+def research_insights(qs):
+    """List recent research insights."""
+    limit = _qs_int(qs, "limit") or 10
+    status = qs.get("status", [None])[0]
+
+    with db.get_conn() as conn:
+        query = "SELECT * FROM research_insights ORDER BY created_at DESC LIMIT ?"
+        params = [limit]
+
+        if status:
+            query = "SELECT * FROM research_insights WHERE status = ? ORDER BY created_at DESC LIMIT ?"
+            params = [status, limit]
+
+        insights = conn.execute(query, params).fetchall()
+        return {
+            "insights": [dict(i) for i in insights],
+            "total": len(insights)
+        }
+
+
+@route("/api/research/publish")
+def research_publish(qs):
+    """Publish queued content to platforms."""
+    business_id = _qs_int(qs, "business_id") or 1
+    publisher = publish_content.ContentPublisher()
+    result = publisher.run(business_id, dry_run=False)
+    return result
+
+
+@route("/api/research/job-log")
+def research_job_log(qs):
+    """Get research job execution history."""
+    limit = _qs_int(qs, "limit") or 30
+
+    with db.get_conn() as conn:
+        logs = conn.execute(
+            "SELECT * FROM research_job_log ORDER BY run_date DESC LIMIT ?",
+            [limit]
+        ).fetchall()
+        return {
+            "job_logs": [dict(l) for l in logs],
+            "total": len(logs)
+        }
 
 
 class Handler(BaseHTTPRequestHandler):

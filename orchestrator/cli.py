@@ -958,6 +958,7 @@ def _cmd_create_razorpay_order(razorpay_key_id, razorpay_key_secret, amount_inr,
             # receipt like "blackboxops_os_starter_1735689600000".
             conn, gateway="razorpay_order", gateway_ref=order["order_id"], amount=amount_inr,
             currency="INR", description=product or description or receipt, status="created",
+            customer_email=None,  # Passed from frontend checkout, not CLI
         )
     print(json.dumps(order, default=str))
 
@@ -1414,6 +1415,7 @@ def main():
     # --description already declared above (bug reports) -- reused here for --create-payment-link's payer-facing text
     parser.add_argument("--customer-name", default=None)
     parser.add_argument("--customer-contact", default=None, help="customer phone number (E.164 or 10-digit Indian)")
+    parser.add_argument("--customer-email", default=None, help="customer email address")
     parser.add_argument("--reference-id", default=None, help="e.g. 'web-audit:dhansetuhub.in'")
     parser.add_argument("--status", default=None, help="filter for --payment-links (created|paid|cancelled|expired)")
 

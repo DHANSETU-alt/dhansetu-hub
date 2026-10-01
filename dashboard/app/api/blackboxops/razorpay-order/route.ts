@@ -19,10 +19,14 @@ const ENV_RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
 // distinct path from the Payment Links flow above it in that file.
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { product } = body;
+  const { product, customerName, customerEmail, customerContact } = body;
 
   if (typeof product !== "string" || !product) {
     return NextResponse.json({ error: "product is required" }, { status: 400 });
+  }
+
+  if (customerEmail && typeof customerEmail !== "string") {
+    return NextResponse.json({ error: "customerEmail must be a string" }, { status: 400 });
   }
 
   const keyId = ENV_RAZORPAY_KEY_ID;
@@ -35,6 +39,10 @@ export async function POST(req: NextRequest) {
     "-m", "orchestrator.cli", "--create-razorpay-order",
     "--receipt", `${product}_${randomUUID()}`, "--product", product,
   ];
+
+  if (customerName) args.push("--customer-name", customerName);
+  if (customerEmail) args.push("--customer-email", customerEmail);
+  if (customerContact) args.push("--customer-contact", customerContact);
 
   try {
     const { stdout } = await execFileAsync("python3", args, {

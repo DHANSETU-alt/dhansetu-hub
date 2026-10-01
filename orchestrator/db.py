@@ -65,6 +65,8 @@ def _migrate_payment_transaction_columns(conn):
     cols = [row[1] for row in conn.execute("PRAGMA table_info(payment_transactions)").fetchall()]
     if "payment_id" not in cols:
         conn.execute("ALTER TABLE payment_transactions ADD COLUMN payment_id TEXT")
+    if "customer_email" not in cols:
+        conn.execute("ALTER TABLE payment_transactions ADD COLUMN customer_email TEXT")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS payment_transactions_gateway_ref_uq ON payment_transactions(gateway, gateway_ref) WHERE gateway_ref IS NOT NULL")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS product_subscriptions_gateway_ref_uq ON product_subscriptions(gateway, gateway_ref) WHERE gateway_ref IS NOT NULL")
 
@@ -907,15 +909,15 @@ def list_website_reviews(conn, limit: int = 20):
 
 
 def insert_payment_transaction(conn, gateway: str, gateway_ref: str, amount: float, currency: str, description: str,
-                                customer_name: str = None, customer_contact: str = None, business_id: int = None,
-                                url_or_link: str = None, status: str = "created") -> int:
+                                customer_name: str = None, customer_contact: str = None, customer_email: str = None,
+                                business_id: int = None, url_or_link: str = None, status: str = "created") -> int:
     cur = conn.execute(
         """
         INSERT INTO payment_transactions (gateway, gateway_ref, amount, currency, description, customer_name,
-                                           customer_contact, business_id, url_or_link, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                           customer_contact, customer_email, business_id, url_or_link, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (gateway, gateway_ref, amount, currency, description, customer_name, customer_contact,
+        (gateway, gateway_ref, amount, currency, description, customer_name, customer_contact, customer_email,
          business_id, url_or_link, status),
     )
     return cur.lastrowid

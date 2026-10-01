@@ -13,8 +13,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getAuthContext, logout } from "@/lib/auth";
-import type { AuthContext } from "@/lib/auth";
+import { getAuthContext, logout } from "@/lib/auth-client";
+import type { AuthContext } from "@/lib/auth-client";
 
 export default function AuthDemoPage() {
   const router = useRouter();
@@ -143,10 +143,16 @@ export default function AuthDemoPage() {
                   Logout
                 </button>
                 <a
+                  href="/smartbudget"
+                  className="flex-1 bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors text-center"
+                >
+                  SmartBudget
+                </a>
+                <a
                   href="/dashboard"
                   className="flex-1 bg-green-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-green-700 transition-colors text-center"
                 >
-                  Go to Dashboard
+                  Dashboard
                 </a>
               </>
             )}

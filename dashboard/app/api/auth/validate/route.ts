@@ -39,12 +39,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Mock response - in production, query database
-    // This is where you'd call the Shakthi orchestrator
+    // Retrieve session from store or mock it
+    // In production: query sessions table from database
+    // For now, return mock session with realistic expiry
+
+    // Check if session has a stored expiry time
+    // For development, extend session by 7 days
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Extract user info from session_id pattern
+    // In production: look up user from database session table
     const mockSession = {
-      user_email: "test@example.com",
-      user_id: 1,
-      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      user_email: "user@example.com",
+      user_id: Math.floor(Math.random() * 10000) + 1,
+      expires_at: expiresAt,
     };
 
     return NextResponse.json(mockSession, { status: 200 });

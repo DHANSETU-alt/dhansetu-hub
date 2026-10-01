@@ -29,22 +29,22 @@ export async function POST(req: NextRequest) {
 
   const args = [
     "-m", "orchestrator.cli", "--verify-razorpay-payment",
+    "--razorpay-key-secret", keySecret,
     "--order-id", orderId, "--payment-id", paymentId, "--razorpay-signature", signature,
   ];
 
   try {
     const { stdout } = await execFileAsync("python3", args, {
       cwd: PROJECT_ROOT, timeout: 20_000,
-      env: { ...process.env, RAZORPAY_KEY_SECRET: keySecret },
     });
     const lastLine = stdout.trim().split("\n").pop() || "{}";
     const result = JSON.parse(lastLine);
     if (result.error || result.verified === false) {
       return NextResponse.json(result, { status: result.error ? 422 : 400 });
     }
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, verified: true });
   } catch (e) {
     const err = e as { stderr?: string; message?: string };
-    return NextResponse.json({ error: (err.stderr || err.message || "Verification failed").trim() }, { status: 422 });
+    return NextResponse.json({ error: (err.stderr || err.message || "Verification failed").trim(), verified: false }, { status: 422 });
   }
 }

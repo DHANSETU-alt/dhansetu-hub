@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
   // verify_razorpay_webhook_signature docstring for the same warning.
   const rawBody = await req.text();
   const signature = req.headers.get("x-razorpay-signature");
+  const webhookId = req.headers.get("x-razorpay-event-id"); // For idempotency tracking
 
   if (!signature) {
     return NextResponse.json({ error: "missing x-razorpay-signature header" }, { status: 400 });
@@ -44,6 +45,8 @@ export async function POST(req: NextRequest) {
     "--razorpay-signature", signature,
   ];
 
+  if (webhookId) args.push("--webhook-id", webhookId);
+
   try {
     const { stdout } = await execFileAsync("python3", args, { cwd: PROJECT_ROOT, timeout: 20_000 });
     const lastLine = stdout.trim().split("\n").pop() || "{}";
@@ -57,7 +60,7 @@ export async function POST(req: NextRequest) {
       const status = result.verified === false ? 200 : 422;
       return NextResponse.json(result, { status });
     }
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, processed: true });
   } catch (e) {
     const err = e as { stderr?: string; message?: string };
     return NextResponse.json({ error: (err.stderr || err.message || "Webhook processing failed").trim() }, { status: 422 });

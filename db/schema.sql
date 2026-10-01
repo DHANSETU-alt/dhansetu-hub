@@ -1072,3 +1072,59 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);
+
+-- Research Automation & Content Publishing Pipeline (Tasks #8+10)
+-- Daily research job fetches trends/news and extracts insights
+
+CREATE TABLE IF NOT EXISTS research_insights (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  business_id INTEGER REFERENCES businesses(id),
+  source_type TEXT NOT NULL,                -- hackernews | rss | tax_estimator | smartbudget
+  source_title TEXT,                        -- specific source name (e.g., article title, feed name)
+  source_url TEXT,
+  insight_title TEXT NOT NULL,              -- 2-5 word summary
+  insight_content TEXT NOT NULL,            -- 150-200 word detailed insight
+  category TEXT NOT NULL,                   -- finance | tech | startup | tax | security | seo
+  confidence_score REAL,                    -- 0.0-1.0, importance/relevance
+  status TEXT NOT NULL DEFAULT 'generated', -- generated | reviewed | published | archived
+  reviewed_by TEXT,
+  reviewed_at TEXT,
+  published_at TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS research_insights_business_status_idx ON research_insights(business_id, status);
+CREATE INDEX IF NOT EXISTS research_insights_created_idx ON research_insights(created_at);
+
+-- Published content tracks where and when insights were distributed
+CREATE TABLE IF NOT EXISTS published_content (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  business_id INTEGER REFERENCES businesses(id),
+  research_insight_id INTEGER REFERENCES research_insights(id),
+  content_type TEXT NOT NULL,              -- twitter_post | linkedin_post | email | knowledge_base
+  platform TEXT NOT NULL,                  -- twitter | linkedin | telegram | email | internal_kb
+  content TEXT NOT NULL,                   -- adapted copy for that platform
+  status TEXT NOT NULL DEFAULT 'queued',   -- queued | published | failed | archived
+  external_url TEXT,                       -- link to published content if applicable
+  error_message TEXT,                      -- if status=failed
+  published_at TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS published_content_status_idx ON published_content(status);
+CREATE INDEX IF NOT EXISTS published_content_business_platform_idx ON published_content(business_id, platform);
+CREATE INDEX IF NOT EXISTS published_content_insight_idx ON published_content(research_insight_id);
+
+-- Research job execution log for debugging and monitoring
+CREATE TABLE IF NOT EXISTS research_job_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_date TEXT NOT NULL,                   -- ISO-8601 date
+  status TEXT NOT NULL,                     -- success | partial | failed
+  insights_fetched INTEGER NOT NULL DEFAULT 0,
+  insights_generated INTEGER NOT NULL DEFAULT 0,
+  content_published INTEGER NOT NULL DEFAULT 0,
+  error_summary TEXT,                       -- brief description if status != success
+  started_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS research_job_log_run_date_idx ON research_job_log(run_date);
+CREATE INDEX IF NOT EXISTS research_job_log_status_idx ON research_job_log(status);
