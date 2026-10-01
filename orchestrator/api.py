@@ -26,6 +26,7 @@ from urllib.parse import urlparse, parse_qs
 
 from . import ceo as ceo_mod
 from . import config, db, finance, initiatives, pa_angella, personal_plane, security, sentinel, voice, website_health
+from . import rate_limiting
 from .jobs import research_daily, publish_content
 
 import psutil
@@ -1254,18 +1255,39 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         qs = parse_qs(parsed.query)
-        if API_TOKEN and self.client_address[0] not in LOOPBACK_ADDRESSES:
+
+        # Check rate limiting first (before auth to prevent brute force attacks)
+        client_ip = self.client_address[0]
+        allowed, rate_limit_headers = rate_limiting.check_rate_limit(client_ip, parsed.path)
+        if not allowed:
+            self._send(429, {"error": "too many requests"}, extra_headers=rate_limit_headers)
+            return
+
+        # Auth check
+        if API_TOKEN and client_ip not in LOOPBACK_ADDRESSES:
             supplied = self.headers.get("X-Shakthi-Token") or qs.get("token", [""])[0]
             if supplied != API_TOKEN:
-                self._send(401, {"error": "missing or invalid token"})
+                self._send(401, {"error": "missing or invalid token"}, extra_headers=rate_limit_headers)
                 return
+
+        # Route handling
         handler = ROUTES.get(parsed.path)
         if not handler:
-            self._send(404, {"error": f"no such route: {parsed.path}"})
+            self._send(404, {"error": f"no such route: {parsed.path}"}, extra_headers=rate_limit_headers)
             return
+
         try:
             result = handler(qs)
-            self._send(200, result)
+            self._send(200, result, extra_headers=rate_limit_headers)
+        except KeyError as e:
+            # Missing required query parameter
+            self._send(400, {"error": f"missing required parameter: {str(e)}"}, extra_headers=rate_limit_headers)
+        except ValueError as e:
+            # Invalid parameter value
+            self._send(400, {"error": f"invalid parameter: {str(e)}"}, extra_headers=rate_limit_headers)
+        except PermissionError as e:
+            # Access denied
+            self._send(403, {"error": str(e)}, extra_headers=rate_limit_headers)
         except Exception as e:
             # Real bug found live (Task 13 verification, 2026-09-03):
             # under the heavy concurrent DB writes many simultaneous
@@ -1284,21 +1306,32 @@ class Handler(BaseHTTPRequestHandler):
                     db.log_error(conn, "api", parsed.path, str(e), tb_mod.format_exc())
             except Exception:
                 pass
-            self._send(500, {"error": str(e)})
+            self._send(500, {"error": "internal server error"}, extra_headers=rate_limit_headers)
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        if API_TOKEN and self.client_address[0] not in LOOPBACK_ADDRESSES:
+        client_ip = self.client_address[0]
+
+        # Check rate limiting
+        allowed, rate_limit_headers = rate_limiting.check_rate_limit(client_ip, parsed.path)
+        if not allowed:
+            self._send(429, {"error": "too many requests"}, extra_headers=rate_limit_headers)
+            return
+
+        # Auth check
+        if API_TOKEN and client_ip not in LOOPBACK_ADDRESSES:
             supplied = self.headers.get("X-Shakthi-Token", "")
             if supplied != API_TOKEN:
-                self._send(401, {"error": "missing or invalid token"})
+                self._send(401, {"error": "missing or invalid token"}, extra_headers=rate_limit_headers)
                 return
+
         try:
             length = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(length) or b"{}")
             actor_id = body.get("actor_id", "owner")
             actor_role = body.get("actor_role", "Owner")
             request_id = body.get("request_id")
+
             if parsed.path == "/api/personal/goals":
                 result = personal_plane.create_goal(body.get("title", ""), actor_id, actor_role, request_id)
             elif parsed.path == "/api/personal/tasks":
@@ -1306,20 +1339,35 @@ class Handler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/personal/reminders":
                 result = personal_plane.create_reminder(body.get("title", ""), body.get("due_at", ""), actor_id, actor_role, request_id)
             else:
-                self._send(404, {"error": f"no such route: {parsed.path}"})
+                self._send(404, {"error": f"no such route: {parsed.path}"}, extra_headers=rate_limit_headers)
                 return
-            self._send(201, result)
-        except (ValueError, PermissionError, json.JSONDecodeError) as exc:
-            self._send(400 if not isinstance(exc, PermissionError) else 403, {"error": str(exc)})
+            self._send(201, result, extra_headers=rate_limit_headers)
+        except (ValueError, json.JSONDecodeError) as exc:
+            self._send(400, {"error": f"bad request: {str(exc)}"}, extra_headers=rate_limit_headers)
+        except PermissionError as exc:
+            self._send(403, {"error": f"forbidden: {str(exc)}"}, extra_headers=rate_limit_headers)
         except Exception as exc:
-            self._send(500, {"error": str(exc)})
+            # Log error safely
+            import traceback as tb_mod
+            try:
+                with db.get_conn() as conn:
+                    db.log_error(conn, "api_post", parsed.path, str(exc), tb_mod.format_exc())
+            except Exception:
+                pass
+            self._send(500, {"error": "internal server error"}, extra_headers=rate_limit_headers)
 
-    def _send(self, status, payload):
+    def _send(self, status, payload, extra_headers=None):
         body = json.dumps(payload, default=str).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")  # localhost dev only
         self.send_header("Content-Length", str(len(body)))
+
+        # Add rate limit headers if provided
+        if extra_headers:
+            for key, value in extra_headers.items():
+                self.send_header(key, value)
+
         self.end_headers()
         self.wfile.write(body)
 

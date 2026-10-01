@@ -1188,3 +1188,102 @@ CREATE TABLE IF NOT EXISTS gst_audit_findings (
 );
 CREATE INDEX IF NOT EXISTS gst_audit_findings_audit_id_idx ON gst_audit_findings(gst_audit_id);
 CREATE INDEX IF NOT EXISTS gst_audit_findings_category_idx ON gst_audit_findings(category);
+
+-- Partner Network (Track B Feature 2) -- onboarding + commission tracking
+-- Business partner application and enrollment.
+-- Tiers: affiliate (15%), reseller (20%), agency (25%)
+-- Commission calculated on transaction completion, paid monthly (net-30)
+CREATE TABLE IF NOT EXISTS partners (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  business_id INTEGER REFERENCES businesses(id),
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,               -- login identity for partner dashboard
+  phone TEXT,
+  company TEXT,
+  website TEXT,
+  tier TEXT NOT NULL DEFAULT 'affiliate',   -- affiliate | reseller | agency
+  status TEXT NOT NULL DEFAULT 'pending',   -- pending | approved | active | suspended | inactive
+  commission_rate REAL NOT NULL DEFAULT 0.15,  -- 0.15-0.25, set based on tier
+  referral_link TEXT NOT NULL UNIQUE,       -- https://app.com?partner_id=xxx
+  approved_by TEXT,                         -- admin/founder email
+  approved_at TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS partners_business_id_idx ON partners(business_id);
+CREATE INDEX IF NOT EXISTS partners_email_idx ON partners(email);
+CREATE INDEX IF NOT EXISTS partners_status_idx ON partners(status);
+CREATE INDEX IF NOT EXISTS partners_referral_link_idx ON partners(referral_link);
+
+-- Partner commission ledger -- one row per sale/transaction conversion
+-- Commission is "earned" when transaction completes, "paid" when payout processes
+CREATE TABLE IF NOT EXISTS partner_commissions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER NOT NULL REFERENCES partners(id),
+  transaction_id TEXT NOT NULL UNIQUE,      -- external gateway payment ID
+  referral_source TEXT NOT NULL,            -- referrer parameter from URL
+  customer_email TEXT NOT NULL,
+  amount REAL NOT NULL,                     -- sale amount
+  commission_rate REAL NOT NULL DEFAULT 0.15,  -- rate at time of transaction
+  commission_amount REAL NOT NULL,          -- calculated: amount * commission_rate
+  product TEXT,                             -- product/service sold
+  status TEXT NOT NULL DEFAULT 'earned',    -- earned | paid | disputed | refunded
+  paid_date TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS partner_commissions_partner_id_idx ON partner_commissions(partner_id);
+CREATE INDEX IF NOT EXISTS partner_commissions_status_idx ON partner_commissions(status);
+CREATE INDEX IF NOT EXISTS partner_commissions_created_idx ON partner_commissions(created_at);
+
+-- Partner payout requests and processing
+-- Net-30 terms: earned commissions eligible for payout after 30 days
+CREATE TABLE IF NOT EXISTS partner_payouts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER NOT NULL REFERENCES partners(id),
+  total_amount REAL NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'INR',
+  payout_method TEXT NOT NULL,              -- bank_transfer | paypal | upi
+  bank_details TEXT,                        -- JSON: {account_number, ifsc, beneficiary_name}
+  upi_id TEXT,
+  paypal_email TEXT,
+  period_start TEXT NOT NULL,               -- YYYY-MM-DD
+  period_end TEXT NOT NULL,                 -- YYYY-MM-DD
+  status TEXT NOT NULL DEFAULT 'pending',   -- pending | processing | processed | failed
+  processed_date TEXT,
+  reference_id TEXT,                        -- e.g., bank transfer receipt/txn ID
+  notes TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS partner_payouts_partner_id_idx ON partner_payouts(partner_id);
+CREATE INDEX IF NOT EXISTS partner_payouts_status_idx ON partner_payouts(status);
+CREATE INDEX IF NOT EXISTS partner_payouts_created_idx ON partner_payouts(created_at);
+
+-- Partner referral stats/analytics
+-- Cached summary for dashboard display, updated daily
+CREATE TABLE IF NOT EXISTS partner_stats (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER NOT NULL UNIQUE REFERENCES partners(id),
+  total_clicks INTEGER NOT NULL DEFAULT 0,
+  total_conversions INTEGER NOT NULL DEFAULT 0,
+  conversion_rate REAL NOT NULL DEFAULT 0.0,
+  total_revenue REAL NOT NULL DEFAULT 0.0,
+  total_earned_commission REAL NOT NULL DEFAULT 0.0,
+  total_paid_commission REAL NOT NULL DEFAULT 0.0,
+  pending_commission REAL NOT NULL DEFAULT 0.0,
+  last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Referral click tracking (for analytics)
+-- Lightweight log of partner link clicks
+CREATE TABLE IF NOT EXISTS referral_clicks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER NOT NULL REFERENCES partners(id),
+  referrer_url TEXT,
+  user_agent TEXT,
+  ip_address TEXT,
+  session_id TEXT,
+  converted INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS referral_clicks_partner_id_idx ON referral_clicks(partner_id);
+CREATE INDEX IF NOT EXISTS referral_clicks_created_idx ON referral_clicks(created_at);
