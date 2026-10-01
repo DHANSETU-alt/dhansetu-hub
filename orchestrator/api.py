@@ -1044,6 +1044,209 @@ def research_job_log(qs):
         }
 
 
+# Task #9: Indian Tax Estimator + GST LeakShield
+
+@route("/api/tax/calculate")
+def tax_calculate(qs):
+    """
+    Calculate income tax for old vs new regime.
+    Query params:
+    - income: gross annual income (required)
+    - deductions: JSON array of {category, description, amount} (optional)
+    Example: /api/tax/calculate?income=500000&deductions=[{"category":"80C","description":"PPF","amount":150000}]
+    """
+    from . import tax_engine
+
+    income_str = qs.get("income", [None])[0]
+    if not income_str:
+        return {"error": "missing 'income' parameter"}
+
+    try:
+        gross_income = float(income_str)
+    except ValueError:
+        return {"error": "invalid 'income' value"}
+
+    # Parse deductions from JSON query param
+    deductions_json = qs.get("deductions", ["[]"])[0]
+    try:
+        deductions_data = json.loads(deductions_json)
+    except json.JSONDecodeError:
+        return {"error": "invalid 'deductions' JSON"}
+
+    deductions = []
+    for d in deductions_data:
+        try:
+            deductions.append(
+                tax_engine.TaxDeduction(
+                    category=d.get("category", "Other"),
+                    description=d.get("description", ""),
+                    amount=float(d.get("amount", 0)),
+                )
+            )
+        except (KeyError, ValueError) as e:
+            return {"error": f"invalid deduction format: {e}"}
+
+    # Calculate comparison
+    comparison = tax_engine.compare_regimes(gross_income, deductions)
+    result = tax_engine.format_comparison_for_json(comparison)
+
+    # Store in database (user_id will be 1 for now, single-user system)
+    with db.get_conn() as conn:
+        conn.execute(
+            """INSERT INTO tax_calculations
+               (user_id, gross_income, old_regime_tax, old_regime_cess, old_regime_total,
+                new_regime_tax, new_regime_cess, new_regime_total, recommendation,
+                tax_savings, deductions_applied)
+               VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [
+                gross_income,
+                result["old_regime"]["total_tax"],
+                result["old_regime"]["cess"],
+                result["old_regime"]["total_liability"],
+                result["new_regime"]["total_tax"],
+                result["new_regime"]["cess"],
+                result["new_regime"]["total_liability"],
+                result["recommendation"],
+                result["tax_savings"],
+                json.dumps(comparison.old_regime.deductions_applied),
+            ],
+        )
+
+    return result
+
+
+@route("/api/tax/deductions")
+def tax_deductions(qs):
+    """List all allowable deductions by category for the tax estimator."""
+    from . import tax_engine
+
+    categories = {
+        "80C": {
+            "description": "Life insurance, PPF, mutual funds, education, home loan principal",
+            "limit": tax_engine.DEDUCTION_LIMITS["80C"],
+            "notes": "Max ₹150,000 per financial year"
+        },
+        "80D": {
+            "description": "Medical insurance premium",
+            "limit": tax_engine.DEDUCTION_LIMITS["80D"],
+            "notes": "Max ₹100,000 for self/family"
+        },
+        "80D_parents": {
+            "description": "Medical insurance for dependent parents aged 60+",
+            "limit": tax_engine.DEDUCTION_LIMITS["80D_parents"],
+            "notes": "Additional ₹50,000 for dependent parents"
+        },
+        "80CCD": {
+            "description": "Pension contribution to CCS",
+            "limit": tax_engine.DEDUCTION_LIMITS["80CCD"],
+            "notes": "Max ₹50,000 per year"
+        },
+        "80E": {
+            "description": "Education loan interest",
+            "limit": tax_engine.DEDUCTION_LIMITS["80E"],
+            "notes": "Unlimited for education loan interest"
+        },
+        "80EE": {
+            "description": "Home loan interest (first-time home buyers)",
+            "limit": tax_engine.DEDUCTION_LIMITS["80EE"],
+            "notes": "Max ₹200,000 for first-time buyers"
+        },
+        "80EEA": {
+            "description": "Interest on loan for electric vehicles",
+            "limit": tax_engine.DEDUCTION_LIMITS["80EEA"],
+            "notes": "Max ₹500,000 for EV purchase"
+        },
+    }
+
+    return {
+        "deductions": categories,
+        "note": "Deductions are only applicable under old regime. New regime has fixed standard deduction only."
+    }
+
+
+@route("/api/tax/gst-audit")
+def gst_audit(qs):
+    """
+    Analyze business expenses for GST compliance and leak detection.
+    Query params:
+    - expenses: JSON array of {category, description, amount, has_gst_invoice, gst_paid} (required)
+    Example: /api/tax/gst-audit?expenses=[{"category":"software","description":"SaaS subscription","amount":120000,"has_gst_invoice":true,"gst_paid":14400}]
+    """
+    from . import gst_analyzer
+
+    # Parse expenses from JSON query param
+    expenses_json = qs.get("expenses", [None])[0]
+    if not expenses_json:
+        return {"error": "missing 'expenses' parameter"}
+
+    try:
+        expenses_data = json.loads(expenses_json)
+    except json.JSONDecodeError:
+        return {"error": "invalid 'expenses' JSON"}
+
+    expenses = []
+    for e in expenses_data:
+        try:
+            expenses.append(
+                gst_analyzer.ExpenseEntry(
+                    category=e.get("category", "general_services"),
+                    description=e.get("description", ""),
+                    amount=float(e.get("amount", 0)),
+                    has_gst_invoice=bool(e.get("has_gst_invoice", False)),
+                    gst_paid=float(e.get("gst_paid", 0)),
+                )
+            )
+        except (KeyError, ValueError) as e:
+            return {"error": f"invalid expense format: {e}"}
+
+    # Analyze compliance
+    report = gst_analyzer.analyze_gst_compliance(expenses)
+    result = gst_analyzer.format_report_for_json(report)
+
+    # Store in database
+    with db.get_conn() as conn:
+        cursor = conn.execute(
+            """INSERT INTO gst_audits
+               (user_id, total_expenses, total_gst_liability, total_gst_reported,
+                total_leak, compliance_score, risk_level, findings_count)
+               VALUES (1, ?, ?, ?, ?, ?, ?, ?)""",
+            [
+                result["total_expenses"],
+                result["total_gst_liability"],
+                result["total_gst_reported"],
+                result["total_leak"],
+                result["compliance_score"],
+                result["risk_level"],
+                len(result["findings"]),
+            ],
+        )
+        audit_id = cursor.lastrowid
+
+        # Store findings
+        for finding in report.findings:
+            conn.execute(
+                """INSERT INTO gst_audit_findings
+                   (gst_audit_id, category, description, expense_amount, expected_gst_rate,
+                    expected_gst_liability, gst_reported, leak_amount, is_input_credit_eligible,
+                    recommendation)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    audit_id,
+                    finding.category,
+                    finding.description,
+                    finding.expense_amount,
+                    finding.expected_gst_rate,
+                    finding.expected_gst_liability,
+                    finding.gst_reported,
+                    finding.leak_amount,
+                    int(finding.is_input_credit_eligible),
+                    finding.recommendation,
+                ],
+            )
+
+    return result
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass  # keep stdout clean; errors still surface via 500s below

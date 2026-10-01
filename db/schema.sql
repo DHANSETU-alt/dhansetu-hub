@@ -1128,3 +1128,63 @@ CREATE TABLE IF NOT EXISTS research_job_log (
 );
 CREATE INDEX IF NOT EXISTS research_job_log_run_date_idx ON research_job_log(run_date);
 CREATE INDEX IF NOT EXISTS research_job_log_status_idx ON research_job_log(status);
+
+-- Task #9: Indian Tax Estimator + GST LeakShield
+-- Tax calculations (old vs new regime comparison)
+CREATE TABLE IF NOT EXISTS tax_calculations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER REFERENCES users(id),
+  business_id INTEGER REFERENCES businesses(id),
+  gross_income REAL NOT NULL,
+  old_regime_tax REAL NOT NULL,
+  old_regime_cess REAL NOT NULL,
+  old_regime_total REAL NOT NULL,
+  new_regime_tax REAL NOT NULL,
+  new_regime_cess REAL NOT NULL,
+  new_regime_total REAL NOT NULL,
+  recommendation TEXT NOT NULL,            -- "old" or "new"
+  tax_savings REAL NOT NULL,               -- difference in tax liability
+  deductions_applied TEXT NOT NULL,        -- JSON array of deduction objects
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS tax_calculations_user_idx ON tax_calculations(user_id);
+CREATE INDEX IF NOT EXISTS tax_calculations_business_idx ON tax_calculations(business_id);
+CREATE INDEX IF NOT EXISTS tax_calculations_created_idx ON tax_calculations(created_at);
+
+-- GST audit reports and findings
+CREATE TABLE IF NOT EXISTS gst_audits (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER REFERENCES users(id),
+  business_id INTEGER REFERENCES businesses(id),
+  total_expenses REAL NOT NULL,
+  total_gst_liability REAL NOT NULL,
+  total_gst_reported REAL NOT NULL,
+  total_leak REAL NOT NULL,
+  compliance_score REAL NOT NULL,          -- 0-100
+  risk_level TEXT NOT NULL,                -- low | medium | high | critical
+  findings_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS gst_audits_user_idx ON gst_audits(user_id);
+CREATE INDEX IF NOT EXISTS gst_audits_business_idx ON gst_audits(business_id);
+CREATE INDEX IF NOT EXISTS gst_audits_risk_level_idx ON gst_audits(risk_level);
+
+-- Individual GST audit findings (leak details)
+CREATE TABLE IF NOT EXISTS gst_audit_findings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  gst_audit_id INTEGER NOT NULL REFERENCES gst_audits(id),
+  category TEXT NOT NULL,                  -- e.g., "software", "travel", "office_supplies"
+  description TEXT NOT NULL,
+  expense_amount REAL NOT NULL,
+  expected_gst_rate REAL NOT NULL,         -- 0.0-0.28
+  expected_gst_liability REAL NOT NULL,
+  gst_reported REAL NOT NULL,
+  leak_amount REAL NOT NULL,
+  is_input_credit_eligible INTEGER NOT NULL,  -- 0 or 1
+  recommendation TEXT NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS gst_audit_findings_audit_id_idx ON gst_audit_findings(gst_audit_id);
+CREATE INDEX IF NOT EXISTS gst_audit_findings_category_idx ON gst_audit_findings(category);
