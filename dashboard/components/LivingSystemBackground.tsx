@@ -20,7 +20,7 @@ import { MatrixRain, FireflySwarm } from "@/components/AmbientEffects";
 // dark background and it just sits behind whatever renders after it.
 export function LivingSystemBackground() {
   return (
-    <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none" style={{ background: "radial-gradient(ellipse at 50% 30%, #0d1420 0%, #05070a 70%)" }}>
+    <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none" style={{ background: "radial-gradient(ellipse at 50% 30%, #0d1420 0%, #05070a 70%)" }}>
       <style>{`
         @keyframes livingBgRadarSpin { to { transform: rotate(360deg); } }
         @keyframes livingBgRipple {

@@ -7,7 +7,11 @@ from . import config
 
 
 def _connect():
-    conn = sqlite3.connect(config.DB_PATH)
+    # Keep concurrent API, worker, and health-check writes from failing on
+    # transient SQLite contention. The busy_timeout below is retained as an
+    # explicit connection setting because it also applies to connections
+    # created by callers that inspect this helper directly.
+    conn = sqlite3.connect(config.DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     # 30s, not sqlite3's 5s default -- the Worker Pool can run multiple
@@ -20,6 +24,16 @@ def _connect():
     # wait longer, never changes query semantics -- safe for every
     # existing single-threaded caller too.
     conn.execute("PRAGMA busy_timeout = 30000")
+    # Real incident, 2026-09-16: default rollback-journal mode takes a
+    # full-database exclusive lock on every write. With ~25 dashboard pages
+    # polling every 1-5s plus the API's own writes, that serialized into
+    # "database is locked" errors and request times climbing past 60s
+    # (logs/dashboard.log). WAL lets readers proceed during a writer's
+    # transaction -- only writer-vs-writer still serializes. `journal_mode`
+    # is sticky in the file header, so this is a fast no-op after the first
+    # connection; keeping it here (not just a one-off migration) means the
+    # setting can't silently regress if the db file is ever recreated.
+    conn.execute("PRAGMA journal_mode = WAL")
     return conn
 
 
@@ -38,7 +52,40 @@ def init_db():
         conn.executescript(config.SCHEMA_PATH.read_text())
         _migrate_agents_squad_column(conn)
         _migrate_content_queue_platform_column(conn)
+        _migrate_system_health_top_process_columns(conn)
         _migrate_initiatives_context_columns(conn)
+        _migrate_task_verification_columns(conn)
+        _migrate_failure_analyses_agent_column(conn)
+        _migrate_payment_transaction_columns(conn)
+
+
+def _migrate_payment_transaction_columns(conn):
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(payment_transactions)").fetchall()]
+    if "payment_id" not in cols:
+        conn.execute("ALTER TABLE payment_transactions ADD COLUMN payment_id TEXT")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS payment_transactions_gateway_ref_uq ON payment_transactions(gateway, gateway_ref) WHERE gateway_ref IS NOT NULL")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS product_subscriptions_gateway_ref_uq ON product_subscriptions(gateway, gateway_ref) WHERE gateway_ref IS NOT NULL")
+
+
+def _migrate_failure_analyses_agent_column(conn):
+    """v3.4 error-proofing plan -- the live failure_analyses table predates
+    agent_id, needs the same idempotent ALTER TABLE pattern as the other
+    _migrate_* functions above. A fresh DB already has the column from
+    schema.sql's CREATE TABLE, so this is a no-op there."""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(failure_analyses)").fetchall()]
+    if "agent_id" not in cols:
+        conn.execute("ALTER TABLE failure_analyses ADD COLUMN agent_id TEXT REFERENCES agents(id)")
+
+
+def _migrate_task_verification_columns(conn):
+    """Completion is not proof: keep independent verification state separate."""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()]
+    if "verification_status" not in cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'unverified'")
+    if "verified_by" not in cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN verified_by TEXT")
+    if "verified_at" not in cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN verified_at TEXT")
 
 
 def _migrate_agents_squad_column(conn):
@@ -57,6 +104,16 @@ def _migrate_content_queue_platform_column(conn):
     cols = [row[1] for row in conn.execute("PRAGMA table_info(content_queue)").fetchall()]
     if "platform" not in cols:
         conn.execute("ALTER TABLE content_queue ADD COLUMN platform TEXT")
+
+
+def _migrate_system_health_top_process_columns(conn):
+    """Same reasoning as agents.squad above -- system_health predates the
+    single-runaway-process watchdog check (sentinel.py's _top_process())."""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(system_health)").fetchall()]
+    if "top_process_cpu_percent" not in cols:
+        conn.execute("ALTER TABLE system_health ADD COLUMN top_process_cpu_percent REAL")
+    if "top_process_name" not in cols:
+        conn.execute("ALTER TABLE system_health ADD COLUMN top_process_name TEXT")
 
 
 def _migrate_initiatives_context_columns(conn):
@@ -122,8 +179,19 @@ def insert_task(conn, agent_id: str, goal: str, business_id: int | None, risk_le
 
 def update_task(conn, task_id: int, status: str, result: str):
     conn.execute(
-        "UPDATE tasks SET status = ?, result = ? WHERE id = ?",
+        "UPDATE tasks SET status = ?, result = ?, verification_status = 'unverified', verified_by = NULL, verified_at = NULL WHERE id = ?",
         (status, result, task_id),
+    )
+
+
+def verify_task(conn, task_id: int, auditor_id: str, accepted: bool, evidence: str):
+    """Only a separately named auditor may make completion count as verified."""
+    if auditor_id in {"", None} or auditor_id in {"qa", "memory"}:
+        raise ValueError("task verification requires an independent auditor identity")
+    status = "verified" if accepted else "rejected"
+    conn.execute(
+        "UPDATE tasks SET verification_status = ?, verified_by = ?, verified_at = CURRENT_TIMESTAMP, result = COALESCE(result, '') || ? WHERE id = ?",
+        (status, auditor_id, f"\n\n[Auditor evidence] {evidence}", task_id),
     )
 
 
@@ -134,7 +202,7 @@ def log_event(conn, task_id: int, event_type: str, payload: str = ""):
     )
 
 
-def log_cost(conn, task_id: int, agent_id: str, model: str, provider: str, tokens_in: int, tokens_out: int, cost_usd: float):
+def log_cost(conn, task_id: int, agent_id: str, model: str, provider: str, tokens_in: int, tokens_out: int, cost_usd: float | None):
     conn.execute(
         """
         INSERT INTO cost_ledger (task_id, agent_id, model, provider, tokens_in, tokens_out, cost_usd)
@@ -394,6 +462,36 @@ def set_file_hash(conn, path: str, sha256: str):
 
 
 # --- Phase 0.2: dashboard helpers ------------------------------------------
+
+def agent_reality_summary(conn) -> dict:
+    """Answers a real founder question (2026-09-16): 'is it really agents
+    working, or only Claude?' All-time, real counts -- no sampling, no
+    estimation. status_counts and provider_counts both come straight from
+    tasks/cost_ledger; never_run_agents is a real set difference, not a
+    guess. This is what replaced the static architecture-diagram.html
+    (which showed the routing.run_task CODE PATH, not whether it's
+    actually being exercised)."""
+    status_counts = {
+        row["status"]: row["n"]
+        for row in conn.execute("SELECT status, COUNT(*) as n FROM tasks GROUP BY status").fetchall()
+    }
+    provider_counts = {
+        row["provider"]: row["n"]
+        for row in conn.execute("SELECT provider, COUNT(*) as n FROM cost_ledger GROUP BY provider").fetchall()
+    }
+    total_agents = conn.execute("SELECT COUNT(*) as n FROM agents").fetchone()["n"]
+    ever_run_ids = {r["agent_id"] for r in conn.execute("SELECT DISTINCT agent_id FROM tasks").fetchall()}
+    all_agents = conn.execute("SELECT id, name FROM agents ORDER BY id").fetchall()
+    never_run = [dict(a) for a in all_agents if a["id"] not in ever_run_ids]
+    return {
+        "status_counts": status_counts,
+        "provider_counts": provider_counts,
+        "total_agents": total_agents,
+        "ever_run_agent_count": len(ever_run_ids),
+        "never_run_agents": never_run,
+        "anthropic_key_configured": bool(config.ANTHROPIC_API_KEY),
+    }
+
 
 def active_task_count(conn):
     row = conn.execute("SELECT COUNT(*) as c FROM tasks WHERE status = 'pending'").fetchone()
@@ -828,8 +926,17 @@ def update_payment_transaction_status(conn, gateway_ref: str, status: str):
     )
 
 
+def set_payment_transaction_paid(conn, gateway_ref: str, payment_id: str):
+    conn.execute("UPDATE payment_transactions SET status = 'paid', payment_id = ? WHERE gateway_ref = ?", (payment_id, gateway_ref))
+
+
 def get_payment_transaction(conn, gateway_ref: str):
     row = conn.execute("SELECT * FROM payment_transactions WHERE gateway_ref = ?", (gateway_ref,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_payment_transaction_by_payment_id(conn, payment_id: str):
+    row = conn.execute("SELECT * FROM payment_transactions WHERE payment_id = ?", (payment_id,)).fetchone()
     return dict(row) if row else None
 
 
@@ -1077,9 +1184,29 @@ def insert_subscription(conn, email: str, product: str, amount_inr: float, gatew
     return cur.lastrowid
 
 
+def get_subscription_by_gateway_ref(conn, gateway: str, gateway_ref: str):
+    row = conn.execute("SELECT * FROM product_subscriptions WHERE gateway = ? AND gateway_ref = ?", (gateway, gateway_ref)).fetchone()
+    return dict(row) if row else None
+
+
+def cancel_subscription_by_gateway_ref(conn, gateway: str, gateway_ref: str):
+    conn.execute("UPDATE product_subscriptions SET status = 'cancelled' WHERE gateway = ? AND gateway_ref = ?", (gateway, gateway_ref))
+
+
 def activate_subscription(conn, subscription_id: int, valid_until: str):
     conn.execute("UPDATE product_subscriptions SET status = 'active', valid_until = ? WHERE id = ?",
                  (valid_until, subscription_id))
+
+
+def get_subscription(conn, subscription_id: int):
+    """Real gap found 2026-09-10 (Task 15 audit): pricing.confirm_subscription_paid()
+    had no way to look up which product a subscription_id belongs to, so it
+    unconditionally set a 365-day valid_until on every confirmed payment --
+    including blackboxops_os_starter/growth, the founder's actual one-time
+    LIFETIME purchases (is_one_time=True). This getter is what lets that
+    function check the product before deciding whether to expire it."""
+    row = conn.execute("SELECT * FROM product_subscriptions WHERE id = ?", (subscription_id,)).fetchone()
+    return dict(row) if row else None
 
 
 def list_subscriptions(conn, product: str = None, status: str = None, limit: int = 100):
@@ -1721,7 +1848,16 @@ def list_initiatives(conn, status: str = None, track: str = None) -> list:
         init["milestone_total"] = len(milestones)
         init["milestone_done"] = done_count
         init["percent_complete"] = round(100 * done_count / len(milestones)) if milestones else 0
-        init["context"] = json.loads(init["context"]) if init.get("context") else None
+        if init.get("context"):
+            try:
+                init["context"] = json.loads(init["context"])
+            except (TypeError, ValueError):
+                # Real corruption found 2026-09-16: id=31 held a plain-text
+                # dev note instead of JSON, 500ing this whole endpoint. Don't
+                # let one bad row take down the list -- surface it instead.
+                init["context"] = {"_malformed": init["context"]}
+        else:
+            init["context"] = None
 
     return initiatives
 
@@ -1747,16 +1883,17 @@ def recent_task_count_for_agent(conn, agent_id: str, minutes: int = 30) -> int:
 def insert_failure_analysis(conn, source_type: str, source_id, title: str, severity: str,
                              summary: str, five_whys: list, root_cause: str,
                              corrective_action: str, preventive_action: str,
-                             lessons_learned: str, status: str = "open") -> int:
+                             lessons_learned: str, status: str = "open",
+                             agent_id: str = None) -> int:
     cur = conn.execute(
         """
         INSERT INTO failure_analyses (source_type, source_id, title, severity, summary,
                                        five_whys, root_cause, corrective_action,
-                                       preventive_action, lessons_learned, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                       preventive_action, lessons_learned, status, agent_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (source_type, source_id, title, severity, summary, json.dumps(five_whys),
-         root_cause, corrective_action, preventive_action, lessons_learned, status),
+         root_cause, corrective_action, preventive_action, lessons_learned, status, agent_id),
     )
     return cur.lastrowid
 
@@ -1999,3 +2136,321 @@ def list_incidents(conn, limit: int = 50) -> list:
         "SELECT * FROM website_incidents ORDER BY opened_at DESC LIMIT ?", (limit,)
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# --- SmartBudget Phase 2 ------------------------------------------------
+
+def insert_income_source(conn, user_id: str, source_name: str, amount: float, frequency: str = "monthly") -> int:
+    """Insert a new income source."""
+    cur = conn.execute(
+        """
+        INSERT INTO smartbudget_income_sources (user_id, source_name, amount, frequency)
+        VALUES (?, ?, ?, ?)
+        """,
+        (user_id, source_name, amount, frequency),
+    )
+    return cur.lastrowid
+
+
+def get_income_sources(conn, user_id: str) -> list:
+    """Get all income sources for a user."""
+    rows = conn.execute(
+        "SELECT * FROM smartbudget_income_sources WHERE user_id = ? ORDER BY created_at DESC",
+        (user_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def insert_expense(conn, user_id: str, category: str, amount: float, date: str, description: str = "", recurring: int = 0) -> int:
+    """Insert a new expense."""
+    cur = conn.execute(
+        """
+        INSERT INTO smartbudget_expenses (user_id, category, amount, date, description, recurring)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (user_id, category, amount, date, description, recurring),
+    )
+    return cur.lastrowid
+
+
+def get_expenses(conn, user_id: str, start_date: str = None, end_date: str = None) -> list:
+    """Get expenses for a user, optionally filtered by date range."""
+    if start_date and end_date:
+        rows = conn.execute(
+            """
+            SELECT * FROM smartbudget_expenses
+            WHERE user_id = ? AND date >= ? AND date <= ?
+            ORDER BY date DESC
+            """,
+            (user_id, start_date, end_date),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM smartbudget_expenses WHERE user_id = ? ORDER BY date DESC",
+            (user_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def insert_budget(conn, user_id: str, category: str, limit_amount: float, period: str = "month") -> int:
+    """Insert or update a budget."""
+    # Check if budget exists
+    existing = conn.execute(
+        "SELECT id FROM smartbudget_budgets WHERE user_id = ? AND category = ?",
+        (user_id, category),
+    ).fetchone()
+
+    if existing:
+        conn.execute(
+            "UPDATE smartbudget_budgets SET limit_amount = ?, period = ? WHERE id = ?",
+            (limit_amount, period, existing["id"]),
+        )
+        return existing["id"]
+    else:
+        cur = conn.execute(
+            """
+            INSERT INTO smartbudget_budgets (user_id, category, limit_amount, period)
+            VALUES (?, ?, ?, ?)
+            """,
+            (user_id, category, limit_amount, period),
+        )
+        return cur.lastrowid
+
+
+def get_budgets(conn, user_id: str) -> list:
+    """Get all budgets for a user."""
+    rows = conn.execute(
+        "SELECT * FROM smartbudget_budgets WHERE user_id = ? ORDER BY created_at DESC",
+        (user_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def insert_transaction(conn, user_id: str, type_: str, amount: float, date: str, description: str = "") -> int:
+    """Insert a transaction (income or expense)."""
+    cur = conn.execute(
+        """
+        INSERT INTO smartbudget_transactions (user_id, type, amount, date, description)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (user_id, type_, amount, date, description),
+    )
+    return cur.lastrowid
+
+
+def get_transactions(conn, user_id: str, start_date: str = None, end_date: str = None) -> list:
+    """Get transactions for a user, optionally filtered by date range."""
+    if start_date and end_date:
+        rows = conn.execute(
+            """
+            SELECT * FROM smartbudget_transactions
+            WHERE user_id = ? AND date >= ? AND date <= ?
+            ORDER BY date DESC
+            """,
+            (user_id, start_date, end_date),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM smartbudget_transactions WHERE user_id = ? ORDER BY date DESC",
+            (user_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_dashboard_summary(conn, user_id: str) -> dict:
+    """Get dashboard summary: total income, expenses, net savings, and alerts."""
+    # Get current month (ISO format YYYY-MM)
+    from datetime import datetime, timedelta
+    now = datetime.now()
+    month_start = now.strftime("%Y-%m-01")
+    month_end = (now.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+    month_end = month_end.strftime("%Y-%m-%d")
+
+    # Total income this month
+    income_row = conn.execute(
+        """
+        SELECT SUM(amount) as total FROM smartbudget_income_sources
+        WHERE user_id = ? AND created_at >= ?
+        """,
+        (user_id, month_start),
+    ).fetchone()
+    total_income = income_row["total"] or 0.0
+
+    # Total expenses this month
+    expenses_row = conn.execute(
+        """
+        SELECT SUM(amount) as total FROM smartbudget_expenses
+        WHERE user_id = ? AND date >= ? AND date <= ?
+        """,
+        (user_id, month_start, month_end),
+    ).fetchone()
+    total_expenses = expenses_row["total"] or 0.0
+
+    # Budget status per category
+    budgets = get_budgets(conn, user_id)
+    budget_status = []
+    for budget in budgets:
+        category_expenses = conn.execute(
+            """
+            SELECT SUM(amount) as total FROM smartbudget_expenses
+            WHERE user_id = ? AND category = ? AND date >= ? AND date <= ?
+            """,
+            (user_id, budget["category"], month_start, month_end),
+        ).fetchone()
+        spent = category_expenses["total"] or 0.0
+        budget_status.append({
+            "category": budget["category"],
+            "limit": budget["limit_amount"],
+            "spent": spent,
+            "percent": (spent / budget["limit_amount"] * 100) if budget["limit_amount"] > 0 else 0,
+        })
+
+    # Money leak alerts (spend increase >30% vs previous month)
+    previous_month_end = now.replace(day=1) - timedelta(days=1)
+    previous_month_start = (now.replace(day=1) - timedelta(days=32)).replace(day=1)
+    previous_month_start = previous_month_start.strftime("%Y-%m-%d")
+    previous_month_end = previous_month_end.strftime("%Y-%m-%d")
+
+    alerts = []
+    categories = conn.execute(
+        "SELECT DISTINCT category FROM smartbudget_expenses WHERE user_id = ?",
+        (user_id,),
+    ).fetchall()
+
+    for cat_row in categories:
+        category = cat_row["category"]
+        curr_month_expenses = conn.execute(
+            """
+            SELECT SUM(amount) as total FROM smartbudget_expenses
+            WHERE user_id = ? AND category = ? AND date >= ? AND date <= ?
+            """,
+            (user_id, category, month_start, month_end),
+        ).fetchone()["total"] or 0.0
+
+        prev_month_expenses = conn.execute(
+            """
+            SELECT SUM(amount) as total FROM smartbudget_expenses
+            WHERE user_id = ? AND category = ? AND date >= ? AND date <= ?
+            """,
+            (user_id, category, previous_month_start, previous_month_end),
+        ).fetchone()["total"] or 0.0
+
+        if prev_month_expenses > 0:
+            percent_increase = ((curr_month_expenses - prev_month_expenses) / prev_month_expenses) * 100
+            if percent_increase >= 30:
+                alerts.append({
+                    "type": "expense_increase",
+                    "category": category,
+                    "increase_percent": round(percent_increase, 1),
+                    "current": round(curr_month_expenses, 2),
+                    "previous": round(prev_month_expenses, 2),
+                })
+
+    return {
+        "total_income": round(total_income, 2),
+        "total_expenses": round(total_expenses, 2),
+        "net_savings": round(total_income - total_expenses, 2),
+        "budget_status": budget_status,
+        "alerts": alerts,
+    }
+
+
+# Phase 2 Authentication: Google Sign-In + Session Management
+# ============================================================================
+
+def create_or_get_user(conn, email: str, google_id: str, name: str = None, picture_url: str = None):
+    """Create or update a user from Google OAuth response.
+    
+    Returns: user dict with id, email, name, google_id, created_at, last_login_at
+    """
+    # Check if user exists
+    existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+    
+    if existing:
+        # Update last_login_at for existing user
+        conn.execute(
+            "UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE email = ?",
+            (email,)
+        )
+        user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+    else:
+        # Create new user
+        conn.execute(
+            """
+            INSERT INTO users (email, google_id, name, picture_url, last_login_at)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (email, google_id, name, picture_url)
+        )
+        user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+    
+    return dict(user) if user else None
+
+
+def create_session(conn, user_id: int, user_email: str, session_id: str, csrf_token: str, expires_at: str):
+    """Create a new session for an authenticated user.
+    
+    Args:
+        conn: database connection
+        user_id: integer user ID
+        user_email: user email address
+        session_id: HMAC-SHA256 signed session identifier
+        csrf_token: random CSRF protection token
+        expires_at: ISO-8601 expiry timestamp
+        
+    Returns: session dict
+    """
+    conn.execute(
+        """
+        INSERT INTO sessions (session_id, user_id, user_email, csrf_token, expires_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (session_id, user_id, user_email, csrf_token, expires_at)
+    )
+    
+    session = conn.execute(
+        "SELECT * FROM sessions WHERE session_id = ?",
+        (session_id,)
+    ).fetchone()
+    
+    return dict(session) if session else None
+
+
+def get_session(conn, session_id: str):
+    """Retrieve a valid, non-expired session.
+    
+    Returns: session dict or None if expired/invalid
+    """
+    session = conn.execute(
+        """
+        SELECT s.*, u.email, u.name 
+        FROM sessions s
+        JOIN users u ON s.user_id = u.id
+        WHERE s.session_id = ? AND datetime(s.expires_at) > datetime('now')
+        """,
+        (session_id,)
+    ).fetchone()
+    
+    return dict(session) if session else None
+
+
+def invalidate_session(conn, session_id: str):
+    """Delete a session (logout)."""
+    conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+
+
+def cleanup_expired_sessions(conn):
+    """Delete all expired sessions (called periodically or on app startup)."""
+    conn.execute("DELETE FROM sessions WHERE datetime(expires_at) <= datetime('now')")
+
+
+def get_user_by_email(conn, email: str):
+    """Retrieve user by email address."""
+    user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+    return dict(user) if user else None
+
+
+def get_user_by_id(conn, user_id: int):
+    """Retrieve user by ID."""
+    user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    return dict(user) if user else None

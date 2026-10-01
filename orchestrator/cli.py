@@ -189,6 +189,14 @@ def _cmd_sentinel_alert_check(token, chat_id):
           else "Sentinel alert check complete: nothing to report")
 
 
+def _cmd_live_website_watch(token, chat_id):
+    token, chat_id = ts.resolve_credentials(token, chat_id)
+    sent = alerts.run_live_website_watch(token, chat_id)
+    count = sent["live_website_watch"]
+    print(f"Live website watch complete: {count} message(s) sent" if count
+          else "Live website watch complete: all watched sites unchanged")
+
+
 def _cmd_client_health_scan():
     print("Client health scan: scoring every won lead...")
     results = customer_success.scan_all_clients()
@@ -870,6 +878,10 @@ def _cmd_discovery_list(status):
 
 def _cmd_subscribe(email, product, gateway, razorpay_key_id, razorpay_key_secret, payu_merchant_key,
                     payu_merchant_salt, success_url, failure_url):
+    razorpay_key_id = razorpay_key_id or os.environ.get("RAZORPAY_KEY_ID")
+    razorpay_key_secret = razorpay_key_secret or os.environ.get("RAZORPAY_KEY_SECRET")
+    payu_merchant_key = payu_merchant_key or os.environ.get("PAYU_MERCHANT_KEY")
+    payu_merchant_salt = payu_merchant_salt or os.environ.get("PAYU_MERCHANT_SALT")
     kwargs = {}
     if gateway == "razorpay":
         if not (razorpay_key_id and razorpay_key_secret):
@@ -899,11 +911,13 @@ def _cmd_subscribe(email, product, gateway, razorpay_key_id, razorpay_key_secret
 
 
 def _cmd_create_razorpay_order(razorpay_key_id, razorpay_key_secret, amount_inr, receipt, description, product=None):
+    razorpay_key_id = razorpay_key_id or os.environ.get("RAZORPAY_KEY_ID")
+    razorpay_key_secret = razorpay_key_secret or os.environ.get("RAZORPAY_KEY_SECRET")
     if not (razorpay_key_id and razorpay_key_secret):
         print(json.dumps({"error": "--create-razorpay-order requires --razorpay-key-id and --razorpay-key-secret"}))
         return
-    if not (amount_inr and receipt):
-        print(json.dumps({"error": "--create-razorpay-order requires --amount-inr and --receipt"}))
+    if not (product and receipt):
+        print(json.dumps({"error": "--create-razorpay-order requires --product and --receipt"}))
         return
     # Real gap found and closed same session: this Orders/Checkout.js path
     # is the actual live checkout customers use (default gateway as of
@@ -914,10 +928,12 @@ def _cmd_create_razorpay_order(razorpay_key_id, razorpay_key_secret, amount_inr,
     # source of truth (pricing.PRODUCT_PRICING + db.count_active_subscriptions),
     # not a second, drifting copy of the limit.
     if product:
-        if product not in pricing.PRODUCT_PRICING:
-            print(json.dumps({"error": f"unknown product '{product}'"}))
+        try:
+            product_pricing = pricing.resolve_order_product(product)
+        except pricing.PricingError as e:
+            print(json.dumps({"error": str(e)}))
             return
-        product_pricing = pricing.PRODUCT_PRICING[product]
+        amount_inr = product_pricing["price_inr"]
         max_customers = product_pricing.get("max_customers")
         if max_customers is not None:
             with db.get_conn() as conn:
@@ -1001,6 +1017,7 @@ def _cmd_process_razorpay_webhook(webhook_secret, raw_body, signature):
 
 
 def _cmd_verify_razorpay_payment(razorpay_key_secret, order_id, payment_id, signature):
+    razorpay_key_secret = razorpay_key_secret or os.environ.get("RAZORPAY_KEY_SECRET")
     if not (razorpay_key_secret and order_id and payment_id and signature):
         print(json.dumps({"error": "--verify-razorpay-payment requires --razorpay-key-secret, --order-id, --payment-id, --razorpay-signature"}))
         return
@@ -1331,6 +1348,8 @@ def main():
                          help="AI Watchdog: behavioral anomaly scan (denied-call spikes, cost spikes, file tamper, unexpected ports, voice probing) -- stores events in DB, prints report")
     parser.add_argument("--watchdog-alert-check", action="store_true",
                          help="Standalone watchdog alert: Telegram-alerts only on warning/critical watchdog_events since last check, using its own dedup state")
+    parser.add_argument("--live-website-watch", action="store_true",
+                         help="Real 24/7 uptime/SSL/response-time check on watched_websites (blackboxops.co.in, dhansetuhub.in, +2 more), Telegram alert on any DOWN/RECOVERED/SLOW state change")
     parser.add_argument("--sentinel-alert-check", action="store_true",
                          help="Standalone sentinel alert: Telegram-alerts only on the latest --sentinel-check snapshot's real thresholds (disk/CPU/RAM/Ollama/DB/internet), using its own dedup state (unlike --alerts-sweep, never dumps unrelated historical backlog)")
     parser.add_argument("--client-health-scan", action="store_true",
@@ -1703,6 +1722,8 @@ def _dispatch(args):
         return _cmd_watchdog_alert_check(args.telegram_token, args.telegram_chat_id)
     if args.sentinel_alert_check:
         return _cmd_sentinel_alert_check(args.telegram_token, args.telegram_chat_id)
+    if args.live_website_watch:
+        return _cmd_live_website_watch(args.telegram_token, args.telegram_chat_id)
     if args.client_health_scan:
         return _cmd_client_health_scan()
     if args.client_health_check:

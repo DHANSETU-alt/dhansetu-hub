@@ -3,7 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-export function AutoRefresh({ intervalSeconds = 1 }: { intervalSeconds?: number }) {
+// A one-second full server-component refresh can overlap the expensive
+// dashboard status fan-out and saturate a development Mac. Live views may
+// opt into a shorter interval explicitly; the safe default is 30 seconds.
+export function AutoRefresh({ intervalSeconds = 30 }: { intervalSeconds?: number }) {
   const router = useRouter();
   const [enabled, setEnabled] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<string>("");

@@ -22,3 +22,6 @@ logs/
 
 # Dhansetu PDF Studio -- uploaded/processed files, not source
 pdf_studio_files/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

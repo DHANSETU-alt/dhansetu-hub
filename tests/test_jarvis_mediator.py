@@ -29,6 +29,17 @@ class TestJarvisMediator(unittest.TestCase):
         self.assertIn("status/sentinel_check", result["prompt"])
         self.assertIn("never invent", result["prompt"])
 
+    def test_builds_professional_task_contract_from_registered_permissions(self):
+        result = jarvis_mediator.build_professional_task(
+            "please scan the Mac and explain what is using disk space",
+            {"id": "security", "name": "Security", "allowed_tools": ["read_file"]},
+            "normal",
+        )
+        self.assertEqual(result["ROLE"], "Security (security)")
+        self.assertEqual(result["PERMISSIONS GRANTED"], ["read_file"])
+        self.assertIn("EVIDENCE", result["OUTPUT FORMAT"])
+        self.assertTrue(result["VERIFICATION REQUIRED"])
+
 
 if __name__ == "__main__":
     unittest.main()

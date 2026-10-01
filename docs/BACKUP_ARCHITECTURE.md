@@ -49,6 +49,29 @@ said `"generation": "G1"` — `--local-backup-list` printed "G1" twice.
 Fixed by rewriting the `generation` field at rotation time; regression
 test added (`test_rotation_relabels_metadata_not_just_moves_files`).
 
+## Re-verified live, 2026-09-10 (Task 2 pipeline check)
+
+Ran the real pipeline end-to-end today, not re-derived from this doc's
+prior claims:
+
+- `create_local_backup(...)` → **KNOWN_GOOD**, promoted to G1. All 5 gates
+  passed live: DB integrity (59 tables), full test suite (**476 passed,
+  0 failed**, up from whatever count existed when this doc was last
+  written Sep 6), `py_compile` build check, API import (65 real routes
+  wired), secret scan (0 findings). Tarball: 9.8MB, sha256
+  `b16389ae...9f706b`.
+- `verify_generation("G1")` → **verified: true**. Hash matched, tar
+  integrity held, and a real extraction of all 575 members succeeded.
+- Conclusion: the local backup/recovery pipeline is still real and
+  correct today, 4 days and one full dashboard-relabeling change set
+  after this doc was last updated. Nothing regressed it.
+
+**"Test controlled merge" (Task 2's next step) could not be attempted —
+not skipped, genuinely impossible right now: the Safe Merge Engine below
+has zero lines of code.** There is nothing to test. Building it is a
+real, separate, multi-section piece of work (spec sections 10–18), not a
+one-line gap.
+
 ## Not started (explicit, not implied)
 
 - **External SSD lane (Backup B)** — no SSD is mounted on this machine

@@ -17,7 +17,7 @@ from pathlib import Path
 
 import psutil
 
-from . import config, db
+from . import config, db, hindsight_gateway, paperclip_gateway
 
 
 def _internet_ok(timeout: float = 2.0) -> bool:
@@ -69,6 +69,28 @@ def _cpu_temp_c():
     return None
 
 
+def _top_process() -> tuple[float | None, str | None]:
+    """Real single-process CPU hog check, added 2026-09-16 after a real
+    incident: aggregate psutil.cpu_percent() read 48.8% (under every
+    _score() threshold below) while `next-server` alone was pegged at
+    123% CPU (verified via `ps aux` at the time) -- the dashboard's own
+    1s-interval auto-refresh across 24 pages hammering the dev server.
+    Aggregate load can hide one runaway process on a multi-core Mac;
+    this catches that case specifically. `ps -Ao pcpu,comm -r` is a
+    single point-in-time read (not psutil's cross-call baseline, which
+    needs an earlier primed call to be accurate) -- same method used to
+    diagnose the real incident, so it's already proven to work here."""
+    try:
+        proc = subprocess.run(["ps", "-Ao", "pcpu,comm", "-r"], capture_output=True, text=True, timeout=3)
+        lines = [l for l in proc.stdout.splitlines()[1:] if l.strip()]
+        if not lines:
+            return None, None
+        pcpu_str, _, comm = lines[0].strip().partition(" ")
+        return round(float(pcpu_str), 1), Path(comm.strip()).name
+    except Exception:
+        return None, None
+
+
 DOCKER_AVAILABLE = shutil.which("docker") is not None
 
 
@@ -104,15 +126,29 @@ def _score(s: dict) -> tuple:
             perf -= 10
     if s["swap_percent"] is not None and s["swap_percent"] > 50:
         perf -= 15
+    # Catches a single runaway process even when aggregate CPU looks fine
+    # (see _top_process() docstring for the real incident this covers).
+    # 100 = one full core saturated; a dev server or build briefly over
+    # that isn't unusual, so this is a small, non-alarming deduction, not
+    # the same severity as aggregate saturation above.
+    if s.get("top_process_cpu_percent") is not None and s["top_process_cpu_percent"] > 100:
+        perf -= 10
     perf = max(0, perf)
     return health, perf
 
 
 def collect_health() -> dict:
     cpu_percent = psutil.cpu_percent(interval=0.3)
-    cpu_freq = psutil.cpu_freq()
+    try:
+        cpu_freq = psutil.cpu_freq()
+    except (OSError, RuntimeError, SystemError):
+        cpu_freq = None
     vm = psutil.virtual_memory()
-    swap = psutil.swap_memory()
+    try:
+        swap = psutil.swap_memory()
+        swap_percent = round(swap.percent, 1)
+    except (OSError, RuntimeError):
+        swap_percent = None
     # psutil.disk_usage("/") reads the sealed System volume, which is
     # nearly empty on modern macOS (System/Data APFS volume split) --
     # real user/app data lives on Data, reachable via the home directory.
@@ -121,6 +157,7 @@ def collect_health() -> dict:
     # fix reflects the wrong, near-empty volume, not real disk usage.
     disk = psutil.disk_usage(str(Path.home()))
     battery = psutil.sensors_battery()
+    top_process_cpu_percent, top_process_name = _top_process()
 
     with db.get_conn() as conn:
         active_tasks = db.active_task_count(conn)
@@ -131,7 +168,7 @@ def collect_health() -> dict:
         "cpu_freq_mhz": round(cpu_freq.current, 0) if cpu_freq else None,
         "cpu_temp_c": _cpu_temp_c(),
         "ram_percent": round(vm.percent, 1),
-        "swap_percent": round(swap.percent, 1),
+        "swap_percent": swap_percent,
         "disk_percent": round(disk.percent, 1),
         "battery_percent": battery.percent if battery else None,
         "battery_plugged": int(battery.power_plugged) if battery else None,
@@ -140,6 +177,8 @@ def collect_health() -> dict:
         "db_ok": int(_db_ok()),
         "active_tasks": active_tasks,
         "untriaged_errors": untriaged,
+        "top_process_cpu_percent": top_process_cpu_percent,
+        "top_process_name": top_process_name,
     }
     health_score, performance_score = _score(snapshot)
     snapshot["health_score"] = health_score
@@ -217,6 +256,8 @@ def service_status() -> dict:
         "claude": "configured" if config.ANTHROPIC_API_KEY else "not configured (no ANTHROPIC_API_KEY)",
         "telegram": "credentials are manual-entry only -- run --telegram-test to check",
         "google_sheets": "credentials are manual-entry only -- run --sheets-sync to check",
+        "hindsight": hindsight_gateway.status(),
+        "paperclip": paperclip_gateway.status(),
     }
 
 

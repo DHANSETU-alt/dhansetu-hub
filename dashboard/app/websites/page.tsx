@@ -16,7 +16,7 @@ export default async function WebsiteMonitoringPage() {
             No live deployment exists yet — this checks local file presence, not real uptime/SSL.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={1} />
+        <AutoRefresh intervalSeconds={5} />
       </div>
 
       <div className="grid grid-cols-3 gap-4">

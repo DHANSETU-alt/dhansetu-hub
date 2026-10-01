@@ -16,11 +16,11 @@ export default async function VoiceCommanderPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <div className="mb-2 flex items-center gap-2"><Badge tone="local">Jarvis Interface</Badge><Badge tone="neutral">Local control plane</Badge></div>
+          <div className="mb-2 flex items-center gap-2"><Badge tone="local">Shakthi_Agent Interface</Badge><Badge tone="neutral">Local control plane</Badge></div>
           <h1 className="text-2xl font-semibold tracking-tight">Voice Commander</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted-foreground)]">Speak naturally in English, Hindi, or Gujarati. Jarvis converts loose conversation into a structured OS request, checks identity and risk, routes the request, and speaks back the result.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted-foreground)]">Speak naturally in English, Hindi, or Gujarati. Shakthi_Agent converts loose conversation into a structured OS request, checks identity and risk, routes the request, and speaks back the result.</p>
         </div>
-        <AutoRefresh intervalSeconds={1} />
+        <AutoRefresh intervalSeconds={5} />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -38,7 +38,7 @@ export default async function VoiceCommanderPage() {
 
       <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
         <Card>
-          <CardHeader title="How Jarvis handles your request" subtitle="Policy-controlled routing; risky actions do not bypass approval" />
+          <CardHeader title="How Shakthi_Agent handles your request" subtitle="Policy-controlled routing; risky actions do not bypass approval" />
           <CardBody>
             <div className="grid gap-2 sm:grid-cols-5">
               {[
@@ -101,7 +101,7 @@ export default async function VoiceCommanderPage() {
                     <span><span className="block text-[9px] uppercase tracking-wider">Recorded</span><span className="font-mono-num text-[var(--ink)]">{c.created_at}</span></span>
                   </div>
                   {c.denied_reason && <p className="mt-2 text-xs text-[var(--bad)]">Policy decision: {c.denied_reason}</p>}
-                  {c.result_summary && <p className="mt-2 rounded-md bg-[var(--surface-2)] px-3 py-2 text-xs leading-5 text-[var(--muted-foreground)]"><span className="font-semibold text-[var(--ink)]">Jarvis response:</span> {c.result_summary}</p>}
+                  {c.result_summary && <p className="mt-2 rounded-md bg-[var(--surface-2)] px-3 py-2 text-xs leading-5 text-[var(--muted-foreground)]"><span className="font-semibold text-[var(--ink)]">Shakthi_Agent response:</span> {c.result_summary}</p>}
                 </div>
               ))}
             </div>

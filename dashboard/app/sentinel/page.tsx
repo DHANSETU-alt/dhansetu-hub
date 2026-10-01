@@ -19,7 +19,7 @@ export default async function SentinelPage() {
             Real psutil readings, taken live — not simulated. CPU temperature needs sudo, unavailable on this machine.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={1} />
+        <AutoRefresh intervalSeconds={5} />
       </div>
 
       {!s ? (

@@ -1,12 +1,14 @@
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from orchestrator import db, pricing
+from orchestrator import cli, db, pricing
 
 
 class PricingTestBase(unittest.TestCase):
@@ -117,6 +119,33 @@ class TestOneTimeCappedProducts(PricingTestBase):
         self.assertIsNone(cfg["period_days"])
         self.assertEqual(cfg["max_customers"], 300)
 
+    def test_confirm_paid_sets_no_expiry_for_one_time_product(self):
+        """Regression test, 2026-09-10: confirm_subscription_paid() used to
+        set a 365-day valid_until unconditionally, so a founding customer's
+        "one-time, lifetime" ₹2999 purchase would have silently expired in
+        a year. It must set valid_until=NULL instead, and access must still
+        be granted long after what would have been the old expiry date."""
+        with db.get_conn() as conn:
+            sub_id = db.insert_subscription(conn, "lifetime@example.com", "blackboxops_os_starter", 2999, "razorpay", gateway_ref="order_1")
+        confirmed = pricing.confirm_subscription_paid(sub_id)
+        self.assertIsNone(confirmed["valid_until"])
+
+        with db.get_conn() as conn:
+            row = db.get_subscription(conn, sub_id)
+        self.assertIsNone(row["valid_until"])
+
+        result = pricing.check_access("lifetime@example.com", "blackboxops_os_starter")
+        self.assertTrue(result["allowed"])
+        self.assertEqual(result["reason"], "active subscription")
+
+    def test_confirm_paid_still_sets_365_day_expiry_for_recurring_product(self):
+        """Same fix must not regress the existing non-one-time behavior --
+        pdf_studio still gets a real 365-day valid_until, not NULL."""
+        with db.get_conn() as conn:
+            sub_id = db.insert_subscription(conn, "recurring@example.com", "pdf_studio", 99, "razorpay", gateway_ref="plink_9")
+        confirmed = pricing.confirm_subscription_paid(sub_id)
+        self.assertIsNotNone(confirmed["valid_until"])
+
     def test_payment_link_flow_blocked_once_cap_reached(self):
         with db.get_conn() as conn:
             for i in range(300):
@@ -189,6 +218,44 @@ class TestCountPaidTransactionsForProduct(PricingTestBase):
                                            currency="INR", description="blackboxops_os_growth", status="paid")
             count = db.count_paid_transactions_for_product(conn, "blackboxops_os_starter")
         self.assertEqual(count, 1)
+
+
+class TestDhanSetuProductCatalog(unittest.TestCase):
+    def test_one_time_prices_are_server_authoritative(self):
+        self.assertEqual(pricing.PRODUCT_PRICING["smartbudget_pro"]["price_inr"], 149)
+        self.assertEqual(pricing.PRODUCT_PRICING["dhansetu_all_access"]["price_inr"], 399)
+        self.assertTrue(pricing.PRODUCT_PRICING["smartbudget_pro"]["is_one_time"])
+        self.assertTrue(pricing.PRODUCT_PRICING["dhansetu_all_access"]["is_one_time"])
+
+    def test_order_product_rejects_unknown_product(self):
+        with self.assertRaises(pricing.PricingError):
+            pricing.resolve_order_product("client_invented_product")
+
+    def test_order_product_returns_catalog_amount_not_client_amount(self):
+        product = pricing.resolve_order_product("smartbudget_pro")
+        self.assertEqual(product["price_inr"], 149)
+        self.assertEqual(product["amount_paise"], 14900)
+
+
+class TestServerAuthoritativeOrder(PricingTestBase):
+    def test_client_amount_is_ignored_for_known_product(self):
+        created = {}
+
+        def fake_create(key_id, key_secret, amount_inr, receipt):
+            created.update(amount_inr=amount_inr, receipt=receipt)
+            return {"order_id": "order_server_price", "amount": 14900, "currency": "INR"}
+
+        with patch("orchestrator.payment_gateway_manager.create_razorpay_order", side_effect=fake_create):
+            with redirect_stdout(StringIO()):
+                cli._cmd_create_razorpay_order(
+                    "key", "secret", 1, "server-generated-reference", "ignored", "smartbudget_pro"
+                )
+
+        self.assertEqual(created["amount_inr"], 149)
+        with db.get_conn() as conn:
+            transaction = db.get_payment_transaction(conn, "order_server_price")
+        self.assertEqual(transaction["amount"], 149)
+        self.assertEqual(transaction["description"], "smartbudget_pro")
 
 
 if __name__ == "__main__":

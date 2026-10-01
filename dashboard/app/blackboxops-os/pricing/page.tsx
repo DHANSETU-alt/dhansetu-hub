@@ -37,8 +37,8 @@ declare global {
 // client in the US market -- the wrong comparable to import directly,
 // prices out the actual target buyer here (small Indian agencies).
 const TIERS = [
-  { id: "blackboxops_os_starter", name: "Starter", price: 2999, period: " one-time", desc: "Core agent team — CEO, Sentinel, Security, Finance — for one business. First 300 founding customers only." },
-  { id: "blackboxops_os_growth", name: "Growth", price: 7999, period: " one-time", desc: "Everything in Starter, plus Chrome Developer, Website Builder, Worker Pool, and ERT. First 300 founding customers only." },
+  { id: "smartbudget_pro", name: "SmartBudget Pro", price: 149, period: " one-time", desc: "Income-first budgeting, goals, recurring costs, and explainable Money LeakShield insights." },
+  { id: "dhansetu_all_access", name: "DhanSetu All Access", price: 399, period: " one-time", desc: "SmartBudget Pro plus eligible DhanSetu tax, GST, and career tools as they become available." },
 ];
 
 export default function BlackboxPricingPage() {
@@ -55,10 +55,6 @@ export default function BlackboxPricingPage() {
   // option, not removed -- what's gone is only the manual static link.
   const [gateway, setGateway] = useState<"razorpay" | "payu">("razorpay");
   const [email, setEmail] = useState("");
-  const [razorpayKeyId, setRazorpayKeyId] = useState("");
-  const [razorpaySecret, setRazorpaySecret] = useState("");
-  const [payuKey, setPayuKey] = useState("");
-  const [payuSalt, setPayuSalt] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [error, setError] = useState("");
   const [result, setResult] = useState<{ checkout?: string | { action_url: string; fields: Record<string, string> } } | null>(null);
@@ -74,7 +70,7 @@ export default function BlackboxPricingPage() {
     try {
       const res = await fetch("/api/blackboxops/subscribe", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, product, gateway: "payu", payuKey, payuSalt }),
+        body: JSON.stringify({ email, product, gateway: "payu" }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
@@ -99,7 +95,7 @@ export default function BlackboxPricingPage() {
     try {
       const orderRes = await fetch("/api/blackboxops/razorpay-order", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amountInr: tier.price, receipt: `${tier.id}_${Date.now()}`, product: tier.id, razorpayKeyId, razorpaySecret }),
+        body: JSON.stringify({ product: tier.id }),
       });
       const order = await orderRes.json();
       if (!orderRes.ok) throw new Error(order.error || "Could not create order");
@@ -110,8 +106,8 @@ export default function BlackboxPricingPage() {
         order_id: order.order_id,
         amount: order.amount,
         currency: order.currency,
-        name: "blackboxOps_OS",
-        description: `${tier.name} — ₹${tier.price.toLocaleString("en-IN")}/month`,
+        name: "DhanSetu Hub",
+        description: `${tier.name} — ₹${tier.price.toLocaleString("en-IN")} one-time`,
         prefill: email ? { email } : undefined,
         theme: { color: "#dba956" },
         handler: async (response: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => {
@@ -120,7 +116,7 @@ export default function BlackboxPricingPage() {
               method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 orderId: response.razorpay_order_id, paymentId: response.razorpay_payment_id,
-                signature: response.razorpay_signature, razorpaySecret,
+                signature: response.razorpay_signature,
               }),
             });
             const verified = await verifyRes.json();
@@ -144,8 +140,8 @@ export default function BlackboxPricingPage() {
     <div className="fixed inset-0 overflow-y-auto" style={{ background: "#0a0c10", color: "#e8ecf1" }}>
       <Script src="https://checkout.razorpay.com/v1/checkout.js" onLoad={() => setRazorpayReady(true)} />
       <div className="max-w-4xl mx-auto px-8 py-10">
-        <Link href="/blackboxops-os" className="text-xs font-mono text-[#8b95a6] hover:text-white">← blackboxOps_OS</Link>
-        <h1 className="text-3xl font-semibold mt-4 mb-2">Pricing</h1>
+        <Link href="/" className="text-xs font-mono text-[#8b95a6] hover:text-white">← DhanSetu Hub</Link>
+        <h1 className="text-3xl font-semibold mt-4 mb-2">DhanSetu pricing</h1>
         <p className="text-sm text-[#a8b1c2] mb-2">
           Founding-customer launch pricing — real, discounted while we build our first track record. Locked in for early customers.
         </p>
@@ -203,27 +199,9 @@ export default function BlackboxPricingPage() {
           )}
         </div>
 
-        <details className="rounded-xl border border-[#1e232e] p-5" style={{ background: "#0f131a" }}>
-          <summary className="text-xs font-mono uppercase tracking-wide text-[#8b95a6] cursor-pointer">
-            Founder test mode — merchant credentials (staging only)
-          </summary>
-          <p className="text-xs text-[#a8b1c2] my-3">
-            A real customer never sees this. In production, merchant credentials live server-side (environment
-            variables), never in the checkout request from a customer&apos;s browser. This panel exists only so you can
-            test the real checkout flow today, on staging, before that server-side config exists.
-          </p>
-          {gateway === "razorpay" ? (
-            <div className="grid grid-cols-2 gap-2">
-              <input placeholder="Razorpay Key ID" value={razorpayKeyId} onChange={(e) => setRazorpayKeyId(e.target.value)} className="rounded-lg border border-[#2a3040] bg-[#0a0c10] px-3 py-2 text-xs" />
-              <input placeholder="Razorpay Key Secret" type="password" value={razorpaySecret} onChange={(e) => setRazorpaySecret(e.target.value)} className="rounded-lg border border-[#2a3040] bg-[#0a0c10] px-3 py-2 text-xs" />
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-2">
-              <input placeholder="PayU Merchant Key" value={payuKey} onChange={(e) => setPayuKey(e.target.value)} className="rounded-lg border border-[#2a3040] bg-[#0a0c10] px-3 py-2 text-xs" />
-              <input placeholder="PayU Merchant Salt" type="password" value={payuSalt} onChange={(e) => setPayuSalt(e.target.value)} className="rounded-lg border border-[#2a3040] bg-[#0a0c10] px-3 py-2 text-xs" />
-            </div>
-          )}
-        </details>
+        <p className="rounded-xl border border-[#1e232e] p-5 text-xs text-[#a8b1c2]" style={{ background: "#0f131a" }}>
+          Merchant credentials are held only by the server. Checkout is unavailable when the payment service is not configured.
+        </p>
 
         <p className="text-xs text-[#5b6472] mt-8">
           Questions before you pay? Email{" "}

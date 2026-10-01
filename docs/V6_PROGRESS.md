@@ -188,6 +188,30 @@ website_builder                 Front End Design       engineering   llama3.2   
 
 ---
 
+## DAY 6 — 2026-09-11
+
+**OBJECTIVE:** Resume after restart; re-verify the Angella handoff path and harden offline/degraded runtime boundaries discovered during validation.
+
+**STATUS:** DONE (runtime resilience) / SECURITY SCAN IN PROGRESS
+
+**FILES CHANGED:**
+- `orchestrator/routing.py` — memory enrichment is now best-effort; an Ollama outage records a `memory_unavailable` event without failing the parent business task.
+- `orchestrator/sentinel.py` — unavailable macOS `cpu_freq` and `swap_memory` readings degrade to honest `None` values instead of crashing health collection.
+- `shakthi/telemetry.py` — unavailable swap and boot-time readings are reported as `UNAVAILABLE` while the remaining telemetry remains live.
+
+**TESTS RUN:**
+- `python3 -m pytest -q tests/test_pa_angella.py tests/test_v31_control_plane.py` → 10 passed.
+- `python3 -m pytest -q` → **478 passed, 0 failed, 33 warnings**.
+- `npm run build` → blocked by offline Google Fonts fetch in `next/font` (`fonts.googleapis.com`); no source/type error was reported.
+
+**RESULT / EVIDENCE:** The previously unresolved Angella-focused path passes. The full suite also passes when Ollama is unavailable and macOS telemetry permissions are restricted, matching the project's local-first/degraded-mode contract.
+
+**KNOWN ISSUES:** 33 existing `datetime.utcnow()` deprecation warnings remain. The standard Codex Security scan is registered for this repository and remains resumable; its canonical report is not yet complete.
+
+**NEXT ACTION:** Day 7 — decide the fate of the disconnected `shakthi/angela.py` prototype, then continue the V6 architecture pass.
+
+---
+
 ## PARALLEL TRACK — Upkeeper for Mac (Project 2), finished to real v1.0.0 — 2026-09-08
 
 Not part of the numbered Angella/v6 day sequence — a real, separate product (`blackboxops-cleaner` / Upkeeper.app) that was already at 100% of its recorded milestones (Shakthi_OS Project 2) but stuck at placeholder build metadata. Folded in here per founder request to track it alongside v6 rather than in a separate thread.

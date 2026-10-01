@@ -5,6 +5,23 @@ import {
   type FullTask, type TaskLogEvent, type CommandCenterResult, type AgentHealth,
 } from "@/lib/api";
 
+// Real "needs founder attention" row from the backend's own decisions table
+// (orchestrator/db.py recent_decisions) -- status is one of
+// approved | rejected | revise, decided by the real CEO agent per
+// agents/ceo.yaml ("revise means the goal is worth pursuing but is
+// underspecified or risky as written"). Not a fabricated approvals queue.
+type Decision = {
+  id: number;
+  task_id: number;
+  goal: string;
+  status: "approved" | "rejected" | "revise" | string;
+  priority_score: number | null;
+  risk_score: number | null;
+  business_impact_score: number | null;
+  reason: string | null;
+  created_at: string;
+};
+
 const NEON_VIOLET = "#b985ff";
 const NEON_CYAN = "#5ef1ff";
 const NEON_PINK = "#ff5ec4";
@@ -71,7 +88,7 @@ const PRIORITY_COLOR: Record<string, string> = {
 // Founder-facing roster labels mapped onto the REAL 25-agent roster --
 // nothing here is a fabricated placeholder agent. Mapping choices
 // explained in the build report: Master Coordinator is the real
-// PA-Angella -> CEO dispatch chain; Code/Design map to the closest real
+// Shakthi_Agent -> CEO dispatch chain (pa_angella internally); Code/Design map to the closest real
 // engineering-layer agents; Security/Finance/Marketing are exact 1:1
 // matches; System Watchdog is a real deterministic subsystem
 // (orchestrator/watchdog.py) rather than an LLM agent, so it has no
@@ -87,11 +104,28 @@ const ROSTER: { label: string; agentIds: string[]; subsystem?: boolean }[] = [
   { label: "System Watchdog", agentIds: [], subsystem: true },
 ];
 
+// Real, file-backed v5.1 status -- see app/api/shakthi-v5/status/route.ts.
+// Every field is read from a real file (TASK_1_WATCHDOG_STATUS.md,
+// data/failure-memory.json) at request time, not hardcoded here.
+type ShakthiV5Status = {
+  mode: string;
+  activeTask: string;
+  topBlocker: string;
+  buildTestStatus: string;
+  failureMemoryCount: number | null;
+  failureMemoryError: string | null;
+  readiness: { done: number; total: number; percent: number; criteria: { item: string; done: boolean; evidence: string }[] };
+};
+
 export default function CommandCenterPage() {
   const [tasks, setTasks] = useState<FullTask[]>([]);
   const [logs, setLogs] = useState<TaskLogEvent[]>([]);
   const [agentHealth, setAgentHealth] = useState<AgentHealth[]>([]);
+  const [decisions, setDecisions] = useState<Decision[]>([]);
   const [apiDown, setApiDown] = useState(false);
+  const [v5Status, setV5Status] = useState<ShakthiV5Status | null>(null);
+  const [v5Error, setV5Error] = useState("");
+  const [showCriteria, setShowCriteria] = useState(false);
 
   const [command, setCommand] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -128,6 +162,7 @@ export default function CommandCenterPage() {
       setTasks(data.tasks);
       setLogs(data.events || []);
       setAgentHealth(data.agents || []);
+      setDecisions(data.decisions || []);
     } catch {
       setApiDown(true);
     }
@@ -138,6 +173,18 @@ export default function CommandCenterPage() {
     const id = setInterval(() => load(token), POLL_MS);
     return () => clearInterval(id);
   }, [load, token]);
+
+  // Same-origin route reading real local files server-side -- no
+  // private-network-access issue like the :8787 calls above, so a plain
+  // client fetch is fine here.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/shakthi-v5/status", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled) setV5Status(d); })
+      .catch((e) => { if (!cancelled) setV5Error(e instanceof Error ? e.message : "v5 status fetch failed"); });
+    return () => { cancelled = true; };
+  }, []);
 
   function saveToken() {
     window.localStorage.setItem(TOKEN_KEY, tokenDraft);
@@ -177,6 +224,7 @@ export default function CommandCenterPage() {
   }
 
   const healthByAgent = Object.fromEntries(agentHealth.map((a) => [a.id, a]));
+  const pendingApprovals = decisions.filter((d) => d.status === "revise");
 
   return (
     <div
@@ -195,7 +243,7 @@ export default function CommandCenterPage() {
             Founder Command Center
           </h1>
           <p className="text-xs mt-1 tracking-wide" style={{ color: "#7a80a0" }}>
-            real dispatch -&gt; pa_angella -&gt; ceo -&gt; local model -&gt; task board. no marketing copy, this is the cockpit.
+            One agent. One command center. Complete business execution. Real dispatch -&gt; Shakthi_Agent -&gt; local model -&gt; task board. no marketing copy, this is the cockpit.
           </p>
         </div>
         <button
@@ -205,6 +253,91 @@ export default function CommandCenterPage() {
         >
           {token ? "LAN TOKEN SET" : "SET LAN TOKEN"}
         </button>
+      </div>
+
+      {/* Current task / system status / pending approvals -- real signals,
+          not decorative. System status mirrors the same apiDown check the
+          rest of this page already relies on; Pending Approvals is the real
+          "revise" decision queue (see Decision type above). */}
+      <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <div className="rounded border p-2" style={{ borderColor: "#ffffff16", background: "#05030c" }}>
+          <div className="text-[10px] uppercase tracking-wide" style={{ color: "#7a80a0" }}>System status</div>
+          <div className="mt-1 flex items-center gap-1.5 text-sm font-bold" style={{ color: apiDown ? NEON_PINK : "#4fffa0" }}>
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: apiDown ? NEON_PINK : "#4fffa0", boxShadow: apiDown ? "none" : "0 0 6px #4fffa0" }} />
+            {apiDown ? "OFFLINE" : "ONLINE"}
+          </div>
+        </div>
+        <div className="rounded border p-2" style={{ borderColor: "#ffffff16", background: "#05030c" }}>
+          <div className="text-[10px] uppercase tracking-wide" style={{ color: "#7a80a0" }}>Current task load</div>
+          <div className="mt-1 text-sm font-bold" style={{ color: NEON_CYAN }}>{byLane.NEW.length + byLane.RUNNING.length} in flight</div>
+        </div>
+        <div className="rounded border p-2" style={{ borderColor: pendingApprovals.length ? "#ffcf4f55" : "#ffffff16", background: "#05030c" }}>
+          <div className="text-[10px] uppercase tracking-wide" style={{ color: "#7a80a0" }}>Pending approvals</div>
+          <div className="mt-1 text-sm font-bold" style={{ color: pendingApprovals.length ? "#ffcf4f" : "#4fffa0" }}>{pendingApprovals.length} need review</div>
+        </div>
+      </div>
+
+      {/* SHAKTHI_OS v5.1 Agent Control -- every value below is read from a
+          real file (docs/v3.4/TASK_1_WATCHDOG_STATUS.md, data/failure-memory.json)
+          by app/api/shakthi-v5/status/route.ts at request time. Approval
+          queue is NOT duplicated here -- it links to the real Pending
+          Approvals panel already on this page (see pendingApprovals below). */}
+      <div className="mb-6 rounded-md border" style={{ borderColor: `${NEON_VIOLET}33`, background: "#03020a" }}>
+        <div className="px-3 py-2 text-xs font-bold tracking-widest uppercase" style={{ color: NEON_VIOLET, borderBottom: `1px solid ${NEON_VIOLET}22` }}>
+          SHAKTHI_OS v5.1 Agent Control
+        </div>
+        {v5Error && !v5Status && <div className="p-3 text-xs" style={{ color: NEON_PINK }}>v5 status unavailable: {v5Error}</div>}
+        {v5Status && (
+          <div className="p-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              <div className="rounded border p-2" style={{ borderColor: "#ffffff16", background: "#05030c" }}>
+                <div className="text-[10px] uppercase tracking-wide" style={{ color: "#7a80a0" }}>Mode</div>
+                <div className="mt-1" style={{ color: "#c7cbe6" }}>{v5Status.mode}</div>
+              </div>
+              <div className="rounded border p-2" style={{ borderColor: "#ffffff16", background: "#05030c" }}>
+                <div className="text-[10px] uppercase tracking-wide" style={{ color: "#7a80a0" }}>Build/test</div>
+                <div className="mt-1 font-bold" style={{ color: v5Status.buildTestStatus === "pass" ? "#4fffa0" : v5Status.buildTestStatus === "fail" ? NEON_PINK : "#7a80a0" }}>
+                  {v5Status.buildTestStatus.toUpperCase()}
+                </div>
+              </div>
+              <div className="rounded border p-2" style={{ borderColor: "#ffffff16", background: "#05030c" }}>
+                <div className="text-[10px] uppercase tracking-wide" style={{ color: "#7a80a0" }}>Failure memory</div>
+                <div className="mt-1" style={{ color: "#c7cbe6" }}>
+                  {v5Status.failureMemoryCount === null ? "not yet tracked" : `${v5Status.failureMemoryCount} entries`}
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCriteria((s) => !s)}
+                className="rounded border p-2 text-left"
+                style={{ borderColor: "#ffffff16", background: "#05030c" }}
+              >
+                <div className="text-[10px] uppercase tracking-wide" style={{ color: "#7a80a0" }}>Task 1 readiness</div>
+                <div className="mt-1 font-bold" style={{ color: NEON_CYAN }}>
+                  {v5Status.readiness.done}/{v5Status.readiness.total} &middot; {v5Status.readiness.percent}%
+                </div>
+              </button>
+            </div>
+            <div className="mt-2 rounded border p-2 text-xs" style={{ borderColor: "#ffcf4f33", background: "#120e02" }}>
+              <span className="uppercase tracking-wide text-[10px]" style={{ color: "#ffcf4f" }}>Active task &middot; top blocker</span>
+              <div className="mt-1" style={{ color: "#c7cbe6" }}>{v5Status.activeTask}</div>
+              <div className="mt-1" style={{ color: "#ffcf4f" }}>{v5Status.topBlocker}</div>
+              <div className="mt-1 opacity-60">
+                Approval queue: see &quot;Pending approvals&quot; below ({pendingApprovals.length} awaiting review) &mdash; not duplicated here.
+              </div>
+            </div>
+            {showCriteria && (
+              <div className="mt-2 rounded border p-2 text-[11px] space-y-1" style={{ borderColor: "#ffffff16", background: "#05030c" }}>
+                {v5Status.readiness.criteria.map((c) => (
+                  <div key={c.item} className="flex gap-2">
+                    <span style={{ color: c.done ? "#4fffa0" : NEON_PINK }}>{c.done ? "✓" : "✗"}</span>
+                    <span style={{ color: "#c7cbe6" }}>{c.item}</span>
+                    <span className="opacity-40 truncate">— {c.evidence}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {showTokenBox && (
@@ -263,7 +396,7 @@ export default function CommandCenterPage() {
           ref={inputRef}
           value={command}
           onChange={(e) => setCommand(e.target.value)}
-          placeholder="founder command..."
+          placeholder="Ask Shakthi_Agent anything..."
           disabled={submitting}
           className="flex-1 min-w-0 bg-transparent outline-none text-sm placeholder:opacity-40"
           style={{ color: "#eaf6ff" }}
@@ -274,7 +407,7 @@ export default function CommandCenterPage() {
           className="px-4 py-1.5 text-xs font-bold uppercase tracking-widest rounded border disabled:opacity-40 shrink-0"
           style={{ borderColor: NEON_VIOLET, color: submitting ? "#8a8fa3" : NEON_VIOLET }}
         >
-          {submitting ? "..." : "EXECUTE"}
+          {submitting ? "..." : "Ask Shakthi_Agent"}
         </button>
       </form>
 
@@ -282,7 +415,7 @@ export default function CommandCenterPage() {
 
       {result && (
         <div className="mb-6 rounded-md border p-4 text-sm space-y-2" style={{ borderColor: `${NEON_CYAN}33`, background: "#050a12" }}>
-          <div><span style={{ color: NEON_CYAN }}>PA ANGELLA REFINED &rarr;</span> {result.refined_prompt}</div>
+          <div><span style={{ color: NEON_CYAN }}>SHAKTHI_AGENT REFINED &rarr;</span> {result.refined_prompt}</div>
           <div className="flex flex-wrap gap-3 text-xs pt-1" style={{ color: "#9aa0c0" }}>
             <span>ceo status: <b style={{ color: result.ceo_decision.status === "approve" ? "#4fffa0" : "#ffcf4f" }}>{result.ceo_decision.status}</b></span>
             <span>priority: {result.ceo_decision.priority_score ?? "—"}</span>
@@ -292,6 +425,28 @@ export default function CommandCenterPage() {
             <span>ceo #{result.ceo_decision.task_id}</span>
           </div>
           {result.ceo_decision.reason && <div style={{ color: "#c7cbe6" }}>{result.ceo_decision.reason}</div>}
+        </div>
+      )}
+
+      {/* Pending approvals -- real "revise" decisions from the CEO agent,
+          not a fabricated approvals queue. Empty when nothing needs review. */}
+      {pendingApprovals.length > 0 && (
+        <div className="mb-6 rounded-md border" style={{ borderColor: "#ffcf4f33", background: "#120e02" }}>
+          <div className="px-3 py-2 text-xs font-bold tracking-widest uppercase" style={{ color: "#ffcf4f", borderBottom: "1px solid #ffcf4f22" }}>
+            Pending approvals // {pendingApprovals.length} awaiting founder review
+          </div>
+          <div className="p-2 space-y-2 max-h-[260px] overflow-y-auto">
+            {pendingApprovals.map((d) => (
+              <div key={d.id} className="rounded p-2 text-xs border" style={{ borderColor: "#ffcf4f33", background: "#0a0a14" }}>
+                <div className="flex items-center justify-between gap-2">
+                  <span style={{ color: "#ffcf4f" }}>decision #{d.id} &middot; task #{d.task_id}</span>
+                  <span className="opacity-40">{d.created_at}</span>
+                </div>
+                <div className="mt-1" style={{ color: "#c7cbe6" }}>{d.goal}</div>
+                {d.reason && <div className="mt-1 opacity-70">{d.reason}</div>}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -335,10 +490,10 @@ export default function CommandCenterPage() {
         ))}
       </div>
 
-      {/* Logs panel */}
+      {/* Activity timeline -- real task_events, newest activity from Shakthi_Agent's dispatch chain */}
       <div className="rounded-md border" style={{ borderColor: `${NEON_VIOLET}33`, background: "#03020a" }}>
         <div className="px-3 py-2 text-xs font-bold tracking-widest uppercase" style={{ color: NEON_VIOLET, borderBottom: `1px solid ${NEON_VIOLET}22` }}>
-          LIVE LOG // real task_events, polling every {POLL_MS / 1000}s
+          SHAKTHI_AGENT ACTIVITY TIMELINE // real task_events, polling every {POLL_MS / 1000}s
         </div>
         <div className="p-3 space-y-1 max-h-[320px] overflow-y-auto text-[11px] sm:text-xs">
           {logs.length === 0 && <div className="opacity-30">no events yet</div>}

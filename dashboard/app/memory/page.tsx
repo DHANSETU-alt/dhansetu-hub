@@ -22,7 +22,7 @@ export default async function MemoryExplorerPage() {
             What an agent actually retrieves before acting — recency-only (no embeddings yet), scoped per business.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={1} />
+        <AutoRefresh intervalSeconds={5} />
       </div>
 
       {entries.length === 0 ? (

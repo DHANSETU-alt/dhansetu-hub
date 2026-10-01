@@ -16,7 +16,7 @@ export function OsHeaderBanner() {
         <div className="text-center">
           <div className="text-[13px] tracking-[0.25em] font-semibold text-[var(--ink)] font-mono-num">
             {SHAKTHI_OS_VERSION.osName}
-            <span className="text-emerald-400 ml-2">v{SHAKTHI_OS_VERSION.version}</span>
+            <span className="text-emerald-400 ml-2">V{SHAKTHI_OS_VERSION.version}</span>
           </div>
           <div className="text-[10px] tracking-[0.3em] uppercase text-[var(--muted-foreground)] mt-0.5">
             {SHAKTHI_OS_VERSION.codename} &bull; Intelligent. Autonomous. Accountable.

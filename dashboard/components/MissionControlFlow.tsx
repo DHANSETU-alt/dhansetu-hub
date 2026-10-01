@@ -18,6 +18,7 @@ export type StatusData = {
   loadBalancer: LoadBalancerStatus;
   ceoHealth: { status: string; failure_count: number };
   sentinelOk: boolean;
+  supportServices: { hindsight: string; paperclip: string };
   recentActivity: FullTask[];
   kpis: {
     totalAgents: number;
@@ -44,6 +45,96 @@ function KpiPill({ label, value, tone = "slate" }: { label: string; value: strin
       <div className="text-[9px] uppercase tracking-[0.14em] text-slate-500">{label}</div>
       <div className="text-base font-semibold font-mono tabular-nums mt-0.5" style={{ color: GLOW[tone] }}>{value}</div>
     </div>
+  );
+}
+
+function AgentPulseRail({ status }: { status: StatusData }) {
+  const latestByAgent = new Map<string, FullTask>();
+  for (const task of status.recentActivity) {
+    if (!latestByAgent.has(task.agent_id)) latestByAgent.set(task.agent_id, task);
+  }
+
+  return (
+    <aside
+      aria-label="Live agent roster"
+      className="absolute right-8 top-40 bottom-24 z-10 hidden w-72 overflow-hidden rounded-xl border border-white/10 bg-[#06090b]/85 shadow-2xl backdrop-blur-md xl:block"
+    >
+      <div className="flex items-center justify-between border-b border-white/10 px-3 py-2.5">
+        <div>
+          <div className="text-[10px] font-mono uppercase tracking-[0.16em] text-cyan-300">Live roster</div>
+          <div className="mt-0.5 text-[11px] text-slate-500">Real task and heartbeat signals</div>
+        </div>
+        <span className="rounded-full border border-emerald-400/30 px-2 py-1 text-[9px] font-mono uppercase text-emerald-300">
+          {status.kpis.activeAgents} active
+        </span>
+      </div>
+      <div className="h-full overflow-y-auto p-2">
+        {status.nodes.map((agent) => {
+          const latest = latestByAgent.get(agent.id);
+          const tone = agent.active ? "#34d399" : agent.color === "rose" ? "#fb7185" : "#64748b";
+          return (
+            <div key={agent.id} className="mb-1.5 rounded-lg border border-white/5 bg-white/[0.02] px-2.5 py-2">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: tone, boxShadow: agent.active ? `0 0 9px ${tone}` : "none" }} />
+                <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-slate-200">{PERSONA_NAME[agent.id] ?? agent.name}</span>
+                <span className="text-[9px] font-mono uppercase" style={{ color: tone }}>{agent.active ? "working" : agent.sublabel}</span>
+              </div>
+              <div className="mt-1 truncate pl-4 text-[10px] text-slate-500" title={latest?.goal ?? agent.sublabel}>
+                {latest ? `${latest.status} · ${latest.goal}` : agent.sublabel}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
+function AgentMapFallback({ status }: { status: StatusData }) {
+  const squads = status.nodes.reduce<Record<string, AgentNode[]>>((groups, agent) => {
+    const squad = agent.squad || "Unassigned";
+    (groups[squad] ??= []).push(agent);
+    return groups;
+  }, {});
+  return (
+    <section
+      aria-label="All agents"
+      className="absolute left-8 right-[22rem] top-48 bottom-24 z-[1] overflow-y-auto rounded-xl border border-cyan-400/10 bg-black/25 p-3 xl:right-[22rem]"
+    >
+      <div className="mb-3 flex items-center justify-between px-1">
+        <span className="text-[10px] font-mono uppercase tracking-[0.16em] text-slate-500">Agent execution map</span>
+        <span className="text-[10px] font-mono text-slate-600">live roster · {status.nodes.length} registered</span>
+      </div>
+      <div className="mb-4 flex items-center justify-center gap-3 text-[10px] font-mono uppercase tracking-[0.14em]">
+        <div className="rounded-lg border border-cyan-400/50 bg-cyan-400/10 px-4 py-2 text-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.14)]">Founder</div>
+        <motion.div animate={{ opacity: [0.25, 1, 0.25] }} transition={{ duration: 1.2, repeat: Infinity }} className="h-px w-10 bg-cyan-300 shadow-[0_0_9px_#22d3ee]" />
+        <div className="rounded-lg border border-violet-400/50 bg-violet-400/10 px-4 py-2 text-violet-300 shadow-[0_0_18px_rgba(167,139,250,0.14)]">Orchestrator</div>
+        <motion.div animate={{ opacity: [0.25, 1, 0.25] }} transition={{ duration: 1.2, repeat: Infinity, delay: 0.3 }} className="h-px w-10 bg-violet-300 shadow-[0_0_9px_#a78bfa]" />
+        <div className="rounded-lg border border-emerald-400/50 bg-emerald-400/10 px-4 py-2 text-emerald-300 shadow-[0_0_18px_rgba(52,211,153,0.14)]">Agent pool</div>
+      </div>
+      <div className="space-y-3 border-t border-violet-400/20 pt-3">
+        {Object.entries(squads).map(([squad, agents]) => (
+          <div key={squad} className="relative rounded-lg border border-white/5 bg-white/[0.015] p-2 pl-4">
+            <div className="absolute bottom-3 left-1.5 top-8 w-px bg-gradient-to-b from-violet-400/70 via-cyan-400/40 to-transparent" />
+            <div className="mb-2 flex items-center gap-2 text-[9px] font-mono uppercase tracking-[0.14em] text-violet-300">
+              <span className="h-1.5 w-1.5 rounded-full bg-violet-300 shadow-[0_0_8px_#a78bfa]" /> {squad} lane · {agents.length} agents
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
+              {agents.map((agent) => {
+                const color = GLOW[agent.color] || GLOW.slate;
+                return (
+                  <motion.div key={agent.id} initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="relative rounded-lg border px-2.5 py-2" style={{ borderColor: `${color}55`, background: `${color}0b`, boxShadow: agent.active ? `0 0 16px ${color}44` : "none" }}>
+                    <motion.span animate={{ opacity: agent.active ? [0.35, 1, 0.35] : 0.45 }} transition={{ duration: 1.1, repeat: Infinity }} className="absolute -left-2 top-1/2 h-px w-2 bg-cyan-300 shadow-[0_0_8px_#22d3ee]" />
+                    <div className="flex items-center gap-2"><span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color, boxShadow: agent.active ? `0 0 8px ${color}` : "none" }} /><span className="truncate text-[11px] font-medium text-slate-200">{PERSONA_NAME[agent.id] ?? agent.name}</span></div>
+                    <div className="mt-1 truncate pl-4 text-[9px] font-mono uppercase" style={{ color }}>{agent.active ? "working now" : agent.sublabel}</div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -258,34 +349,35 @@ function FlowEdge({ sourceX, sourceY, targetX, targetY, data }: EdgeProps) {
   );
 }
 
-// --- Living-system core: a pulsing energy center with concentric rotating
-// containment rings, centered on the founder node. An original visual
-// design for this project -- not a reproduction of any existing character
-// or franchise's reactor/HUD art, just the general "glowing power core"
-// idiom used across a lot of sci-fi UI. Lives INSIDE React Flow's own node
-// space (not a plain absolutely-positioned div over the container) so it
-// pans/zooms/fits in lockstep with the rest of the graph instead of
-// drifting independently of it. Evolution of the previous single radar
-// sweep -- keeps that sweep as one (now subtler) layer and adds real
-// rotating rings + a breathing core, still cyan to match the spec's own
-// "cyan = live info flow" color language, restrained at low alpha so the
-// founder orb on top stays the visual focus, not this. ---
+// --- Living-system core: a pulsing energy center with a real 3D pyramid
+// slowly rotating on its own vertical axis, centered on the founder node.
+// An original visual design for this project -- not a reproduction of any
+// existing character or franchise's reactor/HUD art. Lives INSIDE React
+// Flow's own node space (not a plain absolutely-positioned div over the
+// container) so it pans/zooms/fits in lockstep with the rest of the graph
+// instead of drifting independently of it. Keeps the radar sweep, breathing
+// glow and sonar ripples from the earlier ring-based core -- only the
+// concentric rings themselves were swapped for the pyramid (founder ask,
+// 2026-09-12: "3D Pyramid look ... in slow motion rotating"). ---
 function CoreNode({ data }: NodeProps) {
   const d = data as unknown as { size: number; width?: number; height?: number };
   const w = d.width ?? d.size;
   const h = d.height ?? d.size;
-  // Real bug found live: rings sized as a fraction of `size` (the WIDE
-  // background-sweep radius, spanning the whole org-tree cluster layout --
-  // easily 1000px+) came out as huge, thin, low-opacity circles that
-  // effectively disappeared against the rest of the busy neon graph. Fixed
-  // pixel radii, anchored on the founder orb (150px = 75px radius) instead,
-  // so the rings hug tight around it as a compact, unmistakable core no
-  // matter how large the overall graph's layout radius is.
-  const rings = [
-    { r: 100, dur: 12, dir: 1, dash: "2 9", width: 4 },
-    { r: 135, dur: 20, dir: -1, dash: "34 12", width: 3 },
-    { r: 172, dur: 30, dir: 1, dash: "5 5", width: 2.5 },
-  ];
+  // Four faces built with the classic CSS border-triangle trick (a
+  // zero-size box whose left/right borders are transparent and bottom
+  // border is solid, rendering a triangle). All four start stacked at the
+  // exact same point -- bottom-center of the wrapper -- so `transform-origin:
+  // bottom` gives every face the SAME pivot point; that shared pivot is what
+  // lets rotateY turn them around one common central axis instead of each
+  // spinning around its own base. `translateZ` then pushes each face
+  // outward along its (already Y-rotated) local axis before `rotateX` tilts
+  // it back to form the slope -- translateZ = halfBase * tan(tilt) is the
+  // exact distance that makes the four tilted faces meet edge-to-edge into
+  // a real square footprint at that tilt angle, not an approximation.
+  const halfBase = 70;
+  const tiltDeg = 30;
+  const faceHeight = Math.round(halfBase * 2 * 0.866); // equilateral-ish face
+  const translateZ = Math.round(halfBase * Math.tan((tiltDeg * Math.PI) / 180));
   return (
     <div style={{ width: w, height: h, pointerEvents: "none", position: "relative" }}>
       {/* Faint background sweep, same technique as before -- one slow wedge
@@ -311,39 +403,40 @@ function CoreNode({ data }: NodeProps) {
           animation: "coreBreathe 3.6s ease-in-out infinite",
         }}
       />
-      {/* Concentric containment rings -- segmented dashed circles (an SVG
-          circle with a dasharray reads as machined/mechanical, unlike a
-          smooth CSS border), each spinning at its own speed/direction so
-          they visibly counter-rotate against each other, not just spin
-          together as one blob. Bold stroke + strong glow so this reads
-          clearly even against the busy org-tree graph behind it. */}
-      {rings.map((ring, i) => {
-        const svgDim = ring.r * 2 + ring.width * 2;
-        const circumference = 2 * Math.PI * ring.r;
-        return (
-          <svg
-            key={i}
-            width={svgDim}
-            height={svgDim}
-            viewBox={`0 0 ${svgDim} ${svgDim}`}
-            className="absolute"
-            style={{
-              left: "50%", top: "50%", marginLeft: -svgDim / 2, marginTop: -svgDim / 2,
-              animation: `${ring.dir > 0 ? "ringSpinCW" : "ringSpinCCW"} ${ring.dur}s linear infinite`,
-              filter: "drop-shadow(0 0 6px rgba(34,211,238,0.85))",
-            }}
-          >
-            <circle
-              cx={svgDim / 2} cy={svgDim / 2} r={ring.r}
-              fill="none"
-              stroke="rgba(103,232,249,0.9)"
-              strokeWidth={ring.width}
-              strokeDasharray={ring.dash}
-              strokeDashoffset={(i * circumference) / 7}
+      {/* 3D rotating pyramid -- the living system's core structure. Wrapper
+          carries `perspective` (required on the parent of a preserve-3d
+          element for the depth to actually render) and sits centered on the
+          founder orb, same anchor point the old rings used. */}
+      <div
+        className="absolute"
+        style={{
+          left: "50%", top: "50%",
+          marginLeft: -halfBase, marginTop: -faceHeight / 2,
+          width: halfBase * 2, height: faceHeight,
+          perspective: 900,
+        }}
+      >
+        <div
+          className="absolute inset-0"
+          style={{ transformStyle: "preserve-3d", animation: "pyramidSpin 26s linear infinite" }}
+        >
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              style={{
+                position: "absolute", bottom: 0, left: "50%", marginLeft: -halfBase,
+                width: 0, height: 0,
+                borderLeft: `${halfBase}px solid transparent`,
+                borderRight: `${halfBase}px solid transparent`,
+                borderBottom: `${faceHeight}px solid rgba(34,211,238,0.32)`,
+                transformOrigin: "bottom",
+                transform: `rotateY(${i * 90}deg) translateZ(${-translateZ}px) rotateX(${tiltDeg}deg)`,
+                filter: "drop-shadow(0 0 14px rgba(34,211,238,0.8))",
+              }}
             />
-          </svg>
-        );
-      })}
+          ))}
+        </div>
+      </div>
       {/* Sonar-ping ripples, same as before -- discrete pulses expanding
           outward from center, a different rhythm than the continuous ring
           spin so the core reads as both "running" and "actively pinging." */}
@@ -420,20 +513,20 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
     const nodes: Node[] = [];
     const edges: Edge[] = [];
 
-    const cx = 0, cy = 0;
+    // Explicit left-to-right flow: Founder relay on the left, squad lanes on
+    // the right. Keeping these anchors in columns makes every connection
+    // readable as a directed workflow instead of a floating orbit.
+    const cx = -560, cy = 0;
     const sizePx: Record<"xl" | "lg" | "md", number> = { xl: 150, lg: 118, md: 96 };
     // Cluster ring: how far each squad's center sits from the hub. Scales
     // with squad count so more squads don't overlap each other.
-    const CLUSTER_RADIUS = leafOrbPx * (3.4 + numSquads * 0.35);
+    const CLUSTER_RADIUS = 360;
     // Member ring: how far a squad's own agents sit from THEIR squad's
     // angular position (also anchors the helix's outward extent below).
     const MEMBER_RADIUS = leafOrbPx * 1.9;
 
-    const angleStep = (2 * Math.PI) / numSquads;
-    // Offset by half a step so squads land diagonally (NE/SE/SW/NW for 4
-    // squads), never straight up (collides with the fixed header overlay)
-    // or straight down (collides with the hub stack's own vertical line).
-    const startAngle = -Math.PI / 2 + angleStep / 2;
+    const angleStep = 0;
+    const startAngle = 0;
 
     const hubStack: { id: string; label: string; face?: string; sublabel: string; color: string; size: "xl" | "lg" | "md"; active: boolean }[] = [
       { id: "founder", label: "FOUNDER", sublabel: "", color: "cyan", size: "xl", active: true },
@@ -479,9 +572,8 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
 
     squadKeys.forEach((squad, si) => {
       const members = bySquad.get(squad)!;
-      const angle = startAngle + si * angleStep;
-      const clusterX = cx + CLUSTER_RADIUS * Math.cos(angle);
-      const clusterY = cy + CLUSTER_RADIUS * Math.sin(angle);
+      const clusterX = 280 + si * 290;
+      const clusterY = 0;
 
       nodes.push({
         id: `label-${squad}`, type: "label", position: { x: clusterX - 110, y: clusterY - leafOrbPx * 1.5 },
@@ -499,11 +591,10 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
       });
       edges.push({ id: `e-${hubId}-axle-${squad}`, source: hubId, target: axleId, type: "flow", data: { color: squadColor, active: squadActive } });
 
-      const memberAngleStep = (2 * Math.PI) / Math.max(members.length, 1);
       members.forEach((m, mi) => {
-        const memberAngle = -Math.PI / 2 + mi * memberAngleStep; // first gondola at 12 o'clock, like a real wheel
-        const mx = clusterX + WHEEL_RADIUS_LOCAL * Math.cos(memberAngle);
-        const my = clusterY + WHEEL_RADIUS_LOCAL * Math.sin(memberAngle);
+        const memberAngle = 0;
+        const mx = clusterX;
+        const my = clusterY + (mi - (members.length - 1) / 2) * 112;
         nodes.push({
           id: m.id, type: "orb", position: { x: mx, y: my }, draggable: false,
           data: { label: label(m), face: face(m), sublabel: m.sublabel, color: m.color, size: leafSize, active: m.active, orbitRadius: GONDOLA_SPIN_RADIUS, orbitPhase0: memberAngle },
@@ -577,8 +668,7 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
           0%, 100% { transform: scale(0.85); opacity: 0.55; }
           50%      { transform: scale(1.15); opacity: 1; }
         }
-        @keyframes ringSpinCW  { to { transform: rotate(360deg); } }
-        @keyframes ringSpinCCW { to { transform: rotate(-360deg); } }
+        @keyframes pyramidSpin { to { transform: rotateY(360deg); } }
       `}</style>
 
       {/* "panel" variant (the /concept3 composite) shares the one page-level
@@ -592,7 +682,7 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
           <div className="text-xl font-semibold text-slate-100 mt-0.5">{title}</div>
         </div>
         <div className="flex items-center gap-3">
-          <AutoRefresh intervalSeconds={1} />
+          <AutoRefresh intervalSeconds={3} />
           {backLabel && (
             <a href={backHref} className="text-xs font-mono text-slate-400 hover:text-slate-100 border border-slate-700 rounded-full px-3 py-1.5">
               {backLabel}
@@ -612,6 +702,21 @@ export default function MissionControlFlow({ status, activityWindowMinutes, bran
         />
         <KpiPill label="Bottlenecks" value={String(status.kpis.bottleneckCount)} tone={status.kpis.bottleneckCount > 0 ? "rose" : "emerald"} />
       </div>
+
+      <div className="absolute top-32 left-8 z-10 flex gap-2 text-[10px] font-mono uppercase tracking-[0.12em]">
+        {(["paperclip", "hindsight"] as const).map((service) => {
+          const state = status.supportServices[service];
+          const reachable = state === "reachable";
+          return (
+            <span key={service} className="rounded-full border px-2 py-1" style={{ borderColor: reachable ? "rgba(52,211,153,0.45)" : "rgba(148,163,184,0.25)", color: reachable ? "#6ee7b7" : "#94a3b8" }}>
+              {service} · {state}
+            </span>
+          );
+        })}
+      </div>
+
+      <AgentPulseRail status={status} />
+      <AgentMapFallback status={status} />
 
       {mounted && (
         <ReactFlow

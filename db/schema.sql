@@ -992,3 +992,83 @@ CREATE TABLE IF NOT EXISTS website_incidents (
   status TEXT NOT NULL DEFAULT 'open',     -- open | closed
   summary TEXT
 );
+
+-- SmartBudget Phase 2 -- Income-first personal finance dashboard
+-- ₹149 one-time purchase or free tier with 10 uses/month limit
+-- Core features: income tracking, expense detection, money leak alerts,
+-- CSV import/export. Target: Indian professionals, freelancers, SMB owners.
+CREATE TABLE IF NOT EXISTS smartbudget_income_sources (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,                    -- authenticated user email
+  source_name TEXT NOT NULL,                -- e.g. "Freelance projects", "Salary"
+  amount REAL NOT NULL,
+  frequency TEXT NOT NULL DEFAULT 'monthly',  -- monthly | yearly | one_time
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS smartbudget_income_sources_user_idx ON smartbudget_income_sources(user_id);
+
+CREATE TABLE IF NOT EXISTS smartbudget_expenses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  category TEXT NOT NULL,                   -- dining | transport | utilities | entertainment | health | other
+  amount REAL NOT NULL,
+  date TEXT NOT NULL,                       -- YYYY-MM-DD
+  description TEXT,
+  recurring INTEGER NOT NULL DEFAULT 0,     -- 0/1
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS smartbudget_expenses_user_idx ON smartbudget_expenses(user_id);
+CREATE INDEX IF NOT EXISTS smartbudget_expenses_user_date_idx ON smartbudget_expenses(user_id, date);
+
+CREATE TABLE IF NOT EXISTS smartbudget_budgets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  category TEXT NOT NULL,
+  limit_amount REAL NOT NULL,
+  period TEXT NOT NULL DEFAULT 'month',     -- month | year
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS smartbudget_budgets_user_idx ON smartbudget_budgets(user_id);
+
+CREATE TABLE IF NOT EXISTS smartbudget_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  type TEXT NOT NULL,                       -- income | expense
+  amount REAL NOT NULL,
+  date TEXT NOT NULL,                       -- YYYY-MM-DD
+  description TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS smartbudget_transactions_user_idx ON smartbudget_transactions(user_id);
+CREATE INDEX IF NOT EXISTS smartbudget_transactions_user_date_idx ON smartbudget_transactions(user_id, date);
+
+-- Phase 2 Authentication System
+-- Google Sign-In integration with server-side session management
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL UNIQUE,               -- authenticated user email
+  name TEXT,                                -- user's full name from Google
+  google_id TEXT UNIQUE,                    -- Google account ID
+  picture_url TEXT,                         -- profile picture from Google
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  last_login_at TEXT
+);
+CREATE INDEX IF NOT EXISTS users_email_idx ON users(email);
+CREATE INDEX IF NOT EXISTS users_google_id_idx ON users(google_id);
+
+-- Session storage: httpOnly cookies with HMAC-SHA256 signature
+-- Expiry: 7 days (configurable per SESSION_EXPIRY_DAYS)
+-- CSRF: Double-submit cookie pattern (session_id + csrf_token both required)
+CREATE TABLE IF NOT EXISTS sessions (
+  session_id TEXT PRIMARY KEY,              -- HMAC-SHA256(email + timestamp + random)
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_email TEXT NOT NULL,                 -- denormalized for quick lookup
+  csrf_token TEXT NOT NULL,                 -- double-submit CSRF protection
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  expires_at TEXT NOT NULL                  -- ISO-8601 timestamp
+);
+CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);

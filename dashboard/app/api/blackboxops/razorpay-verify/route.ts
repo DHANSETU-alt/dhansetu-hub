@@ -16,25 +16,27 @@ const ENV_RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
 // optional. Real security boundary, not a formality.
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { orderId, paymentId, signature, razorpaySecret } = body;
+  const { orderId, paymentId, signature } = body;
 
   if (!orderId || !paymentId || !signature) {
     return NextResponse.json({ error: "orderId, paymentId, and signature are required" }, { status: 400 });
   }
 
-  const keySecret = ENV_RAZORPAY_KEY_SECRET || razorpaySecret;
+  const keySecret = ENV_RAZORPAY_KEY_SECRET;
   if (!keySecret) {
-    return NextResponse.json({ error: "Razorpay key secret is required to verify a payment" }, { status: 400 });
+    return NextResponse.json({ error: "Payment service is not configured" }, { status: 503 });
   }
 
   const args = [
     "-m", "orchestrator.cli", "--verify-razorpay-payment",
-    "--razorpay-key-secret", keySecret,
     "--order-id", orderId, "--payment-id", paymentId, "--razorpay-signature", signature,
   ];
 
   try {
-    const { stdout } = await execFileAsync("python3", args, { cwd: PROJECT_ROOT, timeout: 20_000 });
+    const { stdout } = await execFileAsync("python3", args, {
+      cwd: PROJECT_ROOT, timeout: 20_000,
+      env: { ...process.env, RAZORPAY_KEY_SECRET: keySecret },
+    });
     const lastLine = stdout.trim().split("\n").pop() || "{}";
     const result = JSON.parse(lastLine);
     if (result.error || result.verified === false) {

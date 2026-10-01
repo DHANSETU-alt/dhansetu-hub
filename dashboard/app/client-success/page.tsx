@@ -17,7 +17,7 @@ export default async function ClientSuccessDashboardPage() {
             run <code>python3 -m orchestrator.cli --client-health-scan</code> to refresh.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={1} />
+        <AutoRefresh intervalSeconds={5} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

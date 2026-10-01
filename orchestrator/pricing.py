@@ -18,6 +18,8 @@ from datetime import datetime, timedelta
 from . import db
 
 PRODUCT_PRICING = {
+    "smartbudget_pro": {"free_uses": 0, "price_inr": 149, "period_days": None, "is_one_time": True, "label": "SmartBudget Pro — One-time"},
+    "dhansetu_all_access": {"free_uses": 0, "price_inr": 399, "period_days": None, "is_one_time": True, "label": "DhanSetu All Access — One-time"},
     # Real pricing decision, 2026-08-24 -- founder saw both products
     # showing "join waitlist" on the real dhansetuhub.in site and set
     # real prices for both. PDF Studio is real and live here
@@ -56,6 +58,51 @@ class PricingError(RuntimeError):
 def _validate_product(product: str):
     if product not in PRODUCT_PRICING:
         raise PricingError(f"unknown product '{product}' — expected one of {list(PRODUCT_PRICING)}")
+
+
+def resolve_order_product(product: str) -> dict:
+    """Return the server-owned catalog values used to create a payment order."""
+    _validate_product(product)
+    item = PRODUCT_PRICING[product]
+    return {"product": product, **item,
+            "amount_paise": int(round(item["price_inr"] * 100))}
+
+
+def reconcile_order_payment(order_id: str, status: str, payment_id: str | None = None) -> dict:
+    """Apply a verified gateway state exactly once to the entitlement ledger."""
+    if status not in {"paid", "failed", "refunded", "chargeback"}:
+        raise PricingError(f"unsupported payment status '{status}'")
+    with db.get_conn() as conn:
+        transaction = db.get_payment_transaction(conn, order_id)
+        if transaction is None:
+            raise PricingError(f"no payment transaction found for order '{order_id}'")
+        current = transaction["status"]
+        if status == "failed" and current in {"paid", "refunded", "chargeback"}:
+            return {"outcome": "ignored_stale_failure", "transaction_status": current}
+        product = transaction["description"]
+        _validate_product(product)
+        email = (transaction.get("customer_contact") or "").strip().lower()
+        if status == "paid" and ("@" not in email or email.startswith("@") or email.endswith("@")):
+            raise PricingError("verified payment has no valid customer email; entitlement not granted")
+        if status == "paid" and payment_id:
+            db.set_payment_transaction_paid(conn, order_id, payment_id)
+        else:
+            db.update_payment_transaction_status(conn, order_id, status)
+        subscription = db.get_subscription_by_gateway_ref(conn, "razorpay", order_id)
+        if status == "paid":
+            if subscription is None:
+                subscription_id = db.insert_subscription(conn, email, product, transaction["amount"], "razorpay", gateway_ref=order_id)
+                expiry = None if PRODUCT_PRICING[product].get("is_one_time") else (datetime.utcnow() + timedelta(days=365)).strftime("%Y-%m-%d %H:%M:%S")
+                db.activate_subscription(conn, subscription_id, expiry)
+                subscription = db.get_subscription(conn, subscription_id)
+            elif subscription["status"] != "active":
+                expiry = None if PRODUCT_PRICING[product].get("is_one_time") else (datetime.utcnow() + timedelta(days=365)).strftime("%Y-%m-%d %H:%M:%S")
+                db.activate_subscription(conn, subscription["id"], expiry)
+            return {"outcome": "entitlement_active", "entitlement_status": "active", "subscription_id": subscription["id"]}
+        if status in {"refunded", "chargeback"}:
+            db.cancel_subscription_by_gateway_ref(conn, "razorpay", order_id)
+            return {"outcome": "entitlement_revoked", "entitlement_status": "cancelled", "subscription_id": subscription["id"] if subscription else None}
+        return {"outcome": "transaction_updated", "transaction_status": status, "subscription_id": subscription["id"] if subscription else None}
 
 
 def check_access(email: str, product: str) -> dict:
@@ -139,8 +186,24 @@ def confirm_subscription_paid(subscription_id: int) -> dict:
     """Call after verifying the gateway confirms payment (Razorpay:
     --check-payment; PayU: verify_payu_response_hash on the callback).
     Not automatic -- payment confirmation is a real, separate step this
-    function doesn't perform itself."""
-    valid_until = (datetime.utcnow() + timedelta(days=365)).strftime("%Y-%m-%d %H:%M:%S")
+    function doesn't perform itself.
+
+    Real bug fixed 2026-09-10 (Task 15 audit): this used to set a 365-day
+    valid_until unconditionally, for every product -- including
+    blackboxops_os_starter/growth, which PRODUCT_PRICING already marks
+    is_one_time=True and whose label explicitly promises "One-time"
+    lifetime access. A customer who paid for that would have had real
+    access silently expire in a year despite never being told that would
+    happen. db.get_active_subscription() was already written to treat
+    valid_until IS NULL as "never expires" -- the write side just never
+    used it. Now it does."""
     with db.get_conn() as conn:
+        subscription = db.get_subscription(conn, subscription_id)
+        if subscription is None:
+            raise PricingError(f"no subscription found with id {subscription_id}")
+        pricing = PRODUCT_PRICING[subscription["product"]]
+
+        valid_until = None if pricing.get("is_one_time") else (
+            datetime.utcnow() + timedelta(days=365)).strftime("%Y-%m-%d %H:%M:%S")
         db.activate_subscription(conn, subscription_id, valid_until)
     return {"subscription_id": subscription_id, "status": "active", "valid_until": valid_until}

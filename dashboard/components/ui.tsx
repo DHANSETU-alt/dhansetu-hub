@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`glass rounded-xl shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset] ${className}`}>{children}</div>;
+  return <div className={`glass hud-card rounded-xl shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset] ${className}`}>{children}</div>;
 }
 
 export function CardHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) {
@@ -41,7 +41,7 @@ export function Badge({ children, tone = "neutral" }: { children: ReactNode; ton
 export function StatTile({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone?: BadgeTone }) {
   const toneColor = tone === "bad" ? "var(--bad)" : tone === "warn" ? "var(--warn)" : tone === "good" ? "var(--good)" : "var(--ink)";
   return (
-    <div className="glass rounded-xl p-4">
+    <div className="glass hud-tile rounded-xl p-4">
       <div className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">{label}</div>
       <div className="mt-1 text-2xl font-semibold font-mono-num" style={{ color: toneColor }}>
         {value}

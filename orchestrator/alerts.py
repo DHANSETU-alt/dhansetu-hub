@@ -172,6 +172,31 @@ def check_sentinel(conn, state: dict) -> list:
         messages.append(f"Battery low: {snap['battery_percent']}%, not plugged in")
     if snap["cpu_percent"] is not None and snap["cpu_percent"] > 90:
         messages.append(f"High CPU: {snap['cpu_percent']}%")
+    elif snap["cpu_percent"] is not None and snap["cpu_percent"] > 65:
+        # Real founder directive 2026-09-16: proactive check below the
+        # 90% "High CPU" alert above, specifically to answer "should this
+        # load be on Linux instead." Honest limit: OLLAMA_HOST is a
+        # module-level constant read once at process start
+        # (config.py/model_gateway.py) -- this can DETECT routing drift
+        # back to the Mac's local Ollama, but cannot flip it live without
+        # restarting the API process. And routing can't help at all when
+        # the real driver isn't Ollama -- e.g. the real 2026-09-16
+        # incident where next-server (the dashboard's own dev process,
+        # inherently Mac-local, can't run on Linux) was the actual cause
+        # at 123% CPU while aggregate looked fine. So: report what's
+        # actually true, not what would be convenient.
+        top = snap.get("top_process_name")
+        top_cpu = snap.get("top_process_cpu_percent")
+        on_linux = config.OLLAMA_HOST.startswith("http://192.168.31.27")
+        if on_linux:
+            routing_note = "Ollama already routes to the Linux GPU node -- this load isn't Ollama inference."
+        else:
+            routing_note = (
+                f"Ollama is routing LOCALLY ({config.OLLAMA_HOST}), not to the Linux node -- "
+                "restart the API with OLLAMA_HOST=http://192.168.31.27:11434 to shed inference load."
+            )
+        top_note = f" Top process: {top} ({top_cpu}% CPU)." if top else ""
+        messages.append(f"CPU at {snap['cpu_percent']}% (above the 65% watch threshold).{top_note} {routing_note}")
     if snap["ram_percent"] is not None and snap["ram_percent"] > 90:
         messages.append(f"High RAM: {snap['ram_percent']}%")
     if snap["cpu_temp_c"] is not None and snap["cpu_temp_c"] > 85:
@@ -468,6 +493,46 @@ def run_watchdog_alert_check(token: str, chat_id: str) -> dict:
     if messages:
         ts.alert(token, chat_id, "watchdog", "\n".join(f"- {m}" for m in messages))
     return {"watchdog": len(messages)}
+
+
+def run_live_website_watch(token: str, chat_id: str) -> dict:
+    """Real 24/7 uptime/SSL/response-time watch for the actual live sites
+    in `watched_websites` (blackboxops.co.in, dhansetuhub.in, +2 more) --
+    founder directive 2026-09-16: "ensure no clients disappointed with any
+    bugs and errors." Reuses website_health.py's already-correct live HTTP
+    check (this is NOT the same as check_website_downtime() above, which
+    only checks local file existence for unrelated `sites` rows). Meant to
+    run every few minutes via cron so it catches an outage within minutes,
+    not next Monday's weekly --website-review. Dedupes on (site_id, status)
+    pairs in its own state key so a still-down site doesn't re-alert every
+    tick, but a NEW state (e.g. recovered, or newly down after recovering)
+    does alert."""
+    from . import website_health
+
+    state = _load_state()
+    results = website_health.check_all_watched_sites()
+    last_status = state.get("live_site_status", {})
+    messages = []
+    for r in results:
+        site_id = str(r["id"])
+        check = r.get("latest_check") or {}
+        status = check.get("status", "unknown")
+        rt = check.get("response_time_ms")
+        prev = last_status.get(site_id)
+        if status != prev:
+            if status == "online":
+                messages.append(f"RECOVERED: {r['label']} ({r['url']}) is back online, {rt}ms")
+            else:
+                reason = check.get("error") or f"status={status}"
+                messages.append(f"DOWN: {r['label']} ({r['url']}) -- {reason}")
+        elif r["in_alert"] and status == "online":
+            messages.append(f"SLOW: {r['label']} ({r['url']}) responding in {rt}ms, over its {r.get('alert_response_ms_threshold', 3000)}ms threshold")
+        last_status[site_id] = status
+    state["live_site_status"] = last_status
+    _save_state(state)
+    if messages:
+        ts.alert(token, chat_id, "live_website_watch", "\n".join(f"- {m}" for m in messages))
+    return {"live_website_watch": len(messages)}
 
 
 def run_sentinel_alert_check(token: str, chat_id: str) -> dict:

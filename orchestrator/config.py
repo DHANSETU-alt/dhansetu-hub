@@ -8,6 +8,16 @@ SCHEMA_PATH = ROOT / "db" / "schema.sql"
 WORKSPACES_DIR = ROOT / "workspaces"
 TEMPLATES_DIR = ROOT / "templates"
 
+# Local-tier provider for call_local() -- "ollama" (default, genuinely free/
+# local) or "codex" (OpenAI Codex CLI, real paid API usage under whatever
+# account `codex login` authenticated on this machine -- NOT free just
+# because it's called through the "local" call site). Founder directive
+# 2026-09-16, scoped to the Linux box specifically (it already has a real
+# authenticated `codex` CLI; the Mac does not) -- set via env, not hardcoded,
+# so this stays per-machine.
+LOCAL_PROVIDER = os.environ.get("SHAKTHI_LOCAL_PROVIDER", "ollama")
+CODEX_TIMEOUT_SECONDS = int(os.environ.get("SHAKTHI_CODEX_TIMEOUT", "180"))
+
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 # 180s was too tight -- gemma4 (9.6GB, CPU-bound on this machine) has taken
 # 2:24-3:26 across real calls this session and hit the old timeout at least

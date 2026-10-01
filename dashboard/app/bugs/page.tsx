@@ -28,7 +28,7 @@ export default async function BugDashboardPage() {
             Staff-Engineer-style pipeline: analyze → propose (staged, never live) → QA → Security → CEO → apply → verify.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={1} />
+        <AutoRefresh intervalSeconds={5} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

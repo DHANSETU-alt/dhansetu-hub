@@ -65,7 +65,13 @@ class TelemetryCollector:
 
     def collect(self) -> dict[str, Any]:
         memory = psutil.virtual_memory()
-        swap = psutil.swap_memory()
+        try:
+            swap = psutil.swap_memory()
+            swap_used = metric(swap.used)
+        except (OSError, RuntimeError) as exc:
+            # macOS can deny swap statistics in restricted or hardened
+            # environments. Preserve the rest of the live telemetry.
+            swap_used = metric(state="UNAVAILABLE", reason=f"swap statistics unavailable: {exc}")
         disk = psutil.disk_usage("/")
         battery = psutil.sensors_battery()
         counters = psutil.net_io_counters()
@@ -81,12 +87,16 @@ class TelemetryCollector:
         if thermal_state in {"serious", "critical"}:
             penalty += 20
         score = max(0, min(100, round(100 - penalty)))
+        try:
+            uptime = metric(round(time.time() - psutil.boot_time()))
+        except (OSError, RuntimeError) as exc:
+            uptime = metric(state="UNAVAILABLE", reason=f"boot time unavailable: {exc}")
         return {
             "source": "LOCAL", "collected_at": time.time(), "system": self._static_profile(),
             "cpu": {"usage_percent": metric(round(cpu, 1)), "logical_cores": metric(psutil.cpu_count(), state="LOCAL")},
             "memory": {"used": metric(memory.used), "total": metric(memory.total), "available": metric(memory.available),
                        "percent": metric(memory.percent), "cached": metric(getattr(memory, "cached", None), state="LOCAL"),
-                       "swap_used": metric(swap.used)},
+                       "swap_used": swap_used},
             "storage": [{"name": "/", "used": metric(disk.used), "free": metric(disk.free),
                          "total": metric(disk.total), "percent": metric(storage_pct),
                          "read_bps": metric(state="UNAVAILABLE", reason="Per-volume disk rate not connected"),
@@ -97,7 +107,7 @@ class TelemetryCollector:
                          "time_remaining_seconds": metric(battery.secsleft if battery.secsleft >= 0 else None,
                                                           state="LIVE" if battery.secsleft >= 0 else "UNAVAILABLE")}
                         if battery else {"percent": metric(state="NOT AVAILABLE", reason="No battery detected")}),
-            "uptime_seconds": metric(round(time.time() - psutil.boot_time())),
+            "uptime_seconds": uptime,
             "health": {"score": score, "state": "HEALTHY" if score >= 85 else "ATTENTION" if score >= 60 else "CRITICAL",
                        "method": "deterministic-v1"},
         }

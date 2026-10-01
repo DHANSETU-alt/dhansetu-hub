@@ -10,6 +10,7 @@ An env var fallback exists purely as a convenience (see telegram_service.py
 resolve_credentials()), never as the only path.
 """
 import json
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -52,12 +53,27 @@ def _call(token: str, method: str, params: dict, timeout: int = 15) -> dict:
         raise TelegramError("no bot token provided")
     url = API_BASE.format(token=token, method=method)
     data = urllib.parse.urlencode(params).encode()
-    req = urllib.request.Request(url, data=data, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = json.loads(resp.read())
-    except urllib.error.URLError as e:
-        raise TelegramError(f"could not reach Telegram API: {e}") from e
+
+    # Real incident, 2026-09-16/17: an unattended overnight cron run hit
+    # "Connection reset by peer" on an otherwise-healthy Telegram API and
+    # the alert was simply lost -- no other layer retries. This is a
+    # transient network-level failure (confirmed: an immediate manual
+    # retry succeeded with identical params), not a bad request, so one
+    # short retry is the honest fix -- not a longer backoff loop that
+    # would delay a real outage alert.
+    last_error = None
+    for attempt in range(2):
+        req = urllib.request.Request(url, data=data, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                body = json.loads(resp.read())
+            break
+        except urllib.error.URLError as e:
+            last_error = e
+            if attempt == 0:
+                time.sleep(2)
+    else:
+        raise TelegramError(f"could not reach Telegram API after retry: {last_error}") from last_error
 
     if not body.get("ok"):
         raise TelegramError(f"Telegram API error: {body.get('description', body)}")

@@ -92,6 +92,17 @@ export const getOverview = () =>
 
 export const getAgents = () => apiGet<{ agents: Agent[] }>("/api/agents");
 
+export type AgentReality = {
+  status_counts: Record<string, number>;
+  provider_counts: Record<string, number>;
+  total_agents: number;
+  ever_run_agent_count: number;
+  never_run_agents: { id: string; name: string }[];
+  anthropic_key_configured: boolean;
+};
+
+export const getAgentReality = () => apiGet<AgentReality>("/api/agent-reality");
+
 export type AgentHealth = {
   id: string;
   name: string;
@@ -464,6 +475,33 @@ export type MacRuntime = {
 
 export const getMacRuntime = () => apiGet<MacRuntime>("/api/mac/runtime");
 
+export type LinuxRuntime =
+  | {
+      reachable: true;
+      sampled_at: number;
+      hostname: string;
+      os: string;
+      kernel: string;
+      architecture: string;
+      logical_cpus: number | null;
+      cpu_percent: number;
+      ram_percent: number;
+      ram_total_bytes: number;
+      disk_percent: number;
+      disk_free_bytes: number;
+      disk_total_bytes: number;
+      ext_storage:
+        | { present: false }
+        | { present: true; mounted: boolean; total_bytes: number; used_bytes: number | null; free_bytes: number | null; percent: number | null };
+      uptime_seconds: number;
+      gpu:
+        | { state: "CONNECTED"; name: string; utilization_percent: number; mem_used_mb: number; mem_total_mb: number; temperature_c: number }
+        | { state: "UNAVAILABLE" | "DRIVER_ERROR"; name: null; reason: string };
+    }
+  | { reachable: false; sampled_at: number; error: string };
+
+export const getLinuxRuntime = () => apiGet<LinuxRuntime>("/api/linux/runtime");
+
 export type AiUsage = {
   date: string;
   cloud: {
@@ -662,7 +700,14 @@ export type HealthSnapshot = {
   created_at: string;
 };
 
-export type ServiceStatus = { docker: string; claude: string; telegram: string; google_sheets: string };
+export type ServiceStatus = {
+  docker: string;
+  claude: string;
+  telegram: string;
+  google_sheets: string;
+  hindsight: string;
+  paperclip: string;
+};
 
 export const getSentinelLatest = () => apiGet<{ snapshot: HealthSnapshot | null; services: ServiceStatus }>("/api/sentinel/latest");
 export const getSentinelHistory = (limit = 50) => apiGet<{ snapshots: HealthSnapshot[] }>(`/api/sentinel/history?limit=${limit}`);

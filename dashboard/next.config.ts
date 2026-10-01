@@ -46,8 +46,19 @@ const CSP = isProd
       `frame-src ${RAZORPAY_API}`,
     ].join("; ");
 
+// Real bug found + fixed 2026-09-13: Strict-Transport-Security was sent
+// unconditionally, including in dev over plain HTTP -- unlike CSP just
+// above, which already correctly branches on isProd. Chrome caches HSTS
+// per-host (not per-origin/port) the moment it sees this header, then
+// force-upgrades every later request to that host to HTTPS forever
+// (up to max-age) -- this dev server has no TLS listener at all, so once
+// cached, EVERY page on this host silently breaks with a real browser
+// error page, confirmed live via a LAN-IP visit to /mission-control
+// (curl saw a real 200; Chrome showed a hard error; get_page_text/
+// screenshot both failed with "Frame with ID 0 is showing error page").
+// HSTS only makes sense once this is actually served over real HTTPS.
 const SECURITY_HEADERS = [
-  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
+  ...(isProd ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }] : []),
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },

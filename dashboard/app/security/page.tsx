@@ -16,7 +16,7 @@ export default async function SecurityDashboardPage() {
             Findings are deterministic checks (secret patterns, permission review, site heuristics) — not a local model&apos;s judgment.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={1} />
+        <AutoRefresh intervalSeconds={5} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

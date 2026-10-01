@@ -1,12 +1,13 @@
 import type { PaAngellaStatus } from "@/lib/api";
 
-// PA Angella's real visual identity in the dashboard chrome -- an abstract
+// Shakthi_Agent's real visual identity in the dashboard chrome -- an abstract
 // glyph, not a human figure, matching Mission Control's own convention of
 // representing every entity (Founder, CEO, Manager, squads) as a glowing
-// node rather than a literal render. See the design brief saved to the
-// knowledge base ("PA Angella -- Professional Mascot Design Brief") for
-// the full reasoning. status is null when the API couldn't be reached --
-// renders a quiet idle state rather than nothing.
+// node rather than a literal render. Backed by the same real orchestrator
+// signal as before (the pa_angella dispatch lane) -- only the user-facing
+// identity changed, not the underlying data source. status is null when
+// the API couldn't be reached -- renders a quiet idle state rather than
+// nothing.
 export function AngellaPresence({ status }: { status: PaAngellaStatus | null }) {
   const active = status?.active ?? false;
 
@@ -31,8 +32,8 @@ export function AngellaPresence({ status }: { status: PaAngellaStatus | null }) 
           )}
         </circle>
       </svg>
-      <div className="min-w-0">
-        <div className="text-xs font-medium text-[var(--ink)] leading-tight">PA Angella</div>
+      <div className="min-w-0" title="Your autonomous operating agent for business execution.">
+        <div className="text-xs font-medium text-[var(--ink)] leading-tight">Shakthi_Agent</div>
         <div className="text-[10px] text-[var(--muted-foreground)] leading-tight mt-0.5">
           {status === null ? "—" : active ? `Active · ${status.recent_task_count} recent` : "Standing by"}
         </div>

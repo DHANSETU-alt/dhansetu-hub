@@ -1,6 +1,8 @@
-import { getOverview, getGovernorStatus, getCeoHealth, getIncidents, getWorkers, getPaymentLinks, getSecurityLatest, getInitiatives, getMacRuntime, getAiUsage } from "@/lib/api";
+import { getOverview, getGovernorStatus, getCeoHealth, getIncidents, getWorkers, getPaymentLinks, getSecurityLatest, getInitiatives, getMacRuntime, getLinuxRuntime, getAiUsage, getAgents, getAgentHealth } from "@/lib/api";
 import { Card, CardHeader, CardBody, StatTile, Badge, EmptyState } from "@/components/ui";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { SystemCircuitDiagram } from "@/components/SystemCircuitDiagram";
+import { SHAKTHI_OS_VERSION } from "@/lib/version";
 import Link from "next/link";
 
 export default async function ExecutiveDashboard() {
@@ -23,7 +25,7 @@ export default async function ExecutiveDashboard() {
   const ollama = overview.cost_summary.find((c) => c.provider === "ollama");
   const claude = overview.cost_summary.find((c) => c.provider === "claude");
 
-  const [governor, ceoHealth, incidentsResult, workersResult, paymentsResult, securityResult, initiativesResult, macRuntime, aiUsage] = await Promise.all([
+  const [governor, ceoHealth, incidentsResult, workersResult, paymentsResult, securityResult, initiativesResult, macRuntime, linuxRuntime, aiUsage, agentsResult, agentHealthResult] = await Promise.all([
     getGovernorStatus().catch(() => null),
     getCeoHealth().catch(() => null),
     getIncidents().catch(() => null),
@@ -36,34 +38,59 @@ export default async function ExecutiveDashboard() {
     // present in the API and database.
     getInitiatives().catch(() => null),
     getMacRuntime().catch(() => null),
+    getLinuxRuntime().catch(() => null),
     getAiUsage().catch(() => null),
+    getAgents().catch(() => null),
+    getAgentHealth().catch(() => null),
   ]);
   const allInitiatives = initiativesResult?.initiatives ?? [];
+  const agentCount = agentsResult?.agents?.length ?? 0;
+  // "Active recently" = real last_activity timestamp within 24h, from the
+  // same tasks-table signal agent-health already uses -- not a fabricated
+  // per-agent heartbeat (this system has no live agent process liveness).
+  const activeAgentCount = (agentHealthResult?.agents ?? []).filter((a) => {
+    if (!a.last_activity) return false;
+    const ageMs = Date.now() - new Date(a.last_activity.replace(" ", "T") + "Z").getTime();
+    return ageMs >= 0 && ageMs < 24 * 60 * 60 * 1000;
+  }).length;
   const revenueMission = allInitiatives.find((initiative) => initiative.title.includes("Revenue Mission Engine"));
   const initiativeLabel = (track: string, seq: number) =>
     `${track === "os" ? "OS" : track === "project" ? "Project" : "Task"} ${seq}`;
+
+  // This dashboard now runs on two machines (Mac + Linux mirror, wired
+  // 2026-09-16) -- macRuntime.os/.hostname is a real sample of WHATEVER
+  // machine is actually serving this request (socket.gethostname(),
+  // platform.system(), never guessed), despite the "mac" in its route
+  // name. Real bug this fixes: the badge/subtitle used to hardcode "Mac"
+  // regardless, so the Linux mirror's own dashboard confusingly said
+  // "Mac control center" / "running on this Mac installation" about
+  // itself -- exactly what the founder flagged live.
+  const hostLabel = macRuntime?.os === "Linux" ? "Linux" : macRuntime?.os === "Darwin" ? "Mac" : macRuntime?.os ?? "This host";
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="mb-2 flex flex-wrap gap-2"><Badge tone="local">Mac control center</Badge><Badge tone={macRuntime ? "good" : "bad"}>{macRuntime ? "Runtime connected" : "Runtime unavailable"}</Badge></div>
-          <h1 className="text-2xl font-semibold tracking-tight">SHAKTHI_OS 3.2 Working Board</h1>
-          <p className="text-sm text-[var(--muted-foreground)] mt-1">Founder-level view of data stored and services running on this Mac installation.</p>
+          <div className="mb-2 flex flex-wrap gap-2"><Badge tone="local">{hostLabel} control center{macRuntime ? ` · ${macRuntime.hostname}` : ""}</Badge><Badge tone={macRuntime ? "good" : "bad"}>{macRuntime ? "Runtime connected" : "Runtime unavailable"}</Badge></div>
+          <h1 className="text-2xl font-semibold tracking-tight">{SHAKTHI_OS_VERSION.osName} V{SHAKTHI_OS_VERSION.version} Working Board</h1>
+          <p className="text-sm text-[var(--muted-foreground)] mt-1">Founder-level view of data stored and services running on this {hostLabel} installation.</p>
         </div>
-        <AutoRefresh intervalSeconds={1} />
+        <AutoRefresh intervalSeconds={5} />
       </div>
 
       <nav className="work-shortcuts" aria-label="Working areas">
         <Link href="/initiatives"><strong>Founder tasks</strong><small>Review pending work and initiative status</small></Link>
         <Link href="/tasks"><strong>Task pipeline</strong><small>Inspect execution records and results</small></Link>
         <Link href="/command-center"><strong>Issue a command</strong><small>Submit work through the existing controls</small></Link>
-        <Link href="/connections"><strong>Connections</strong><small>Check local data and execution readiness</small></Link>
+        <a href="/architecture-diagram.html" target="_blank" rel="noopener"><strong>System architecture</strong><small>Static code-path diagram — how a task is designed to flow</small></a>
+        <Link href="/agents"><strong>Is it really agents, or just Claude?</strong><small>Live answer: real provider split, agent utilization, all time</small></Link>
       </nav>
+
+      <SystemCircuitDiagram macRuntime={macRuntime} linuxRuntime={linuxRuntime} agentCount={agentCount} activeAgentCount={activeAgentCount} />
 
       <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
         <Card>
-          <CardHeader title="Mac Runtime" subtitle={macRuntime ? `Live local sample · ${macRuntime.hostname} · API :${macRuntime.api_port}` : "No current Mac sample available"} action={<Badge tone={macRuntime ? "good" : "bad"}>{macRuntime ? "LIVE LOCAL" : "DISCONNECTED"}</Badge>} />
+          <CardHeader title={`${hostLabel} Runtime`} subtitle={macRuntime ? `Live local sample · ${macRuntime.hostname} · API :${macRuntime.api_port}` : `No current ${hostLabel} sample available`} action={<Badge tone={macRuntime ? "good" : "bad"}>{macRuntime ? "LIVE LOCAL" : "DISCONNECTED"}</Badge>} />
           <CardBody>
             {macRuntime ? (
               <div className="space-y-4">
@@ -94,6 +121,65 @@ export default async function ExecutiveDashboard() {
           </CardBody>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader
+          title="Linux Compute Node"
+          subtitle={linuxRuntime?.reachable ? `Live sample over SSH · ${linuxRuntime.hostname} · 192.168.31.27` : "Not reachable this sample -- no cached numbers shown"}
+          action={<Badge tone={linuxRuntime?.reachable ? "good" : "bad"}>{linuxRuntime?.reachable ? "ONLINE" : "OFFLINE"}</Badge>}
+        />
+        <CardBody>
+          <div className="mb-4 flex items-center justify-center gap-0">
+            <span className="flex h-3 w-3 rounded-full bg-[var(--local)] shadow-[0_0_8px_2px_var(--local)]" />
+            <span className="mx-2 text-[10px] uppercase tracking-wider text-[var(--muted-foreground)]">Mac</span>
+            <div className="relative h-px w-32 overflow-hidden bg-[var(--border)] sm:w-56">
+              {linuxRuntime?.reachable && (
+                <span
+                  className="absolute inset-y-0 w-8 bg-gradient-to-r from-transparent via-[var(--local)] to-transparent"
+                  style={{ animation: "linux-flow-pulse 1.6s linear infinite", boxShadow: "0 0 8px 1px var(--local)" }}
+                />
+              )}
+            </div>
+            <span className="mx-2 text-[10px] uppercase tracking-wider text-[var(--muted-foreground)]">Linux</span>
+            <span className={`flex h-3 w-3 rounded-full ${linuxRuntime?.reachable ? "bg-[var(--local)] shadow-[0_0_8px_2px_var(--local)]" : "bg-[var(--bad)]"}`} />
+          </div>
+          <style>{"@keyframes linux-flow-pulse { from { left: -2rem; } to { left: 100%; } }"}</style>
+
+          {linuxRuntime?.reachable ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                <StatTile label="CPU" value={`${linuxRuntime.cpu_percent}%`} hint={`${linuxRuntime.logical_cpus ?? "—"} logical CPUs`} tone={linuxRuntime.cpu_percent > 90 ? "bad" : linuxRuntime.cpu_percent > 75 ? "warn" : "good"} />
+                <StatTile label="RAM" value={`${linuxRuntime.ram_percent}%`} hint={`${(linuxRuntime.ram_total_bytes / 1073741824).toFixed(1)} GiB total`} tone={linuxRuntime.ram_percent > 90 ? "bad" : linuxRuntime.ram_percent > 80 ? "warn" : "good"} />
+                <StatTile label="Int Disk" value={`${linuxRuntime.disk_percent}%`} hint={`${(linuxRuntime.disk_free_bytes / 1073741824).toFixed(0)}/${(linuxRuntime.disk_total_bytes / 1073741824).toFixed(0)} GiB free`} tone={linuxRuntime.disk_percent > 90 ? "bad" : linuxRuntime.disk_percent > 80 ? "warn" : "good"} />
+                <StatTile
+                  label="Ext Storage"
+                  value={!linuxRuntime.ext_storage.present ? "N/A" : !linuxRuntime.ext_storage.mounted ? "Unmounted" : `${linuxRuntime.ext_storage.percent}%`}
+                  hint={
+                    !linuxRuntime.ext_storage.present
+                      ? "no external drive detected"
+                      : !linuxRuntime.ext_storage.mounted
+                        ? `${(linuxRuntime.ext_storage.total_bytes / 1073741824).toFixed(0)} GiB, not mounted`
+                        : `${(linuxRuntime.ext_storage.free_bytes! / 1073741824).toFixed(0)}/${(linuxRuntime.ext_storage.total_bytes / 1073741824).toFixed(0)} GiB free`
+                  }
+                  tone={!linuxRuntime.ext_storage.present ? "neutral" : !linuxRuntime.ext_storage.mounted ? "warn" : (linuxRuntime.ext_storage.percent ?? 0) > 90 ? "bad" : "good"}
+                />
+                <StatTile
+                  label="GPU"
+                  value={linuxRuntime.gpu.state === "CONNECTED" ? `${linuxRuntime.gpu.utilization_percent}%` : "N/A"}
+                  hint={linuxRuntime.gpu.state === "CONNECTED" ? `${linuxRuntime.gpu.temperature_c}°C · ${linuxRuntime.gpu.mem_used_mb.toFixed(0)}/${linuxRuntime.gpu.mem_total_mb.toFixed(0)} MiB` : linuxRuntime.gpu.reason}
+                  tone={linuxRuntime.gpu.state === "CONNECTED" ? "good" : "neutral"}
+                />
+              </div>
+              <div className="grid gap-2 text-xs text-[var(--muted-foreground)] sm:grid-cols-2">
+                <div className="rounded-md border border-[var(--border)] bg-black/20 p-3"><span className="block text-[10px] uppercase tracking-wider">Host</span><span className="text-[var(--ink)]">{linuxRuntime.os} {linuxRuntime.kernel} · {linuxRuntime.architecture}</span></div>
+                <div className="rounded-md border border-[var(--border)] bg-black/20 p-3"><span className="block text-[10px] uppercase tracking-wider">GPU</span><span className={linuxRuntime.gpu.state === "CONNECTED" ? "text-[var(--good)]" : "text-[var(--warn)]"}>{linuxRuntime.gpu.state === "CONNECTED" ? linuxRuntime.gpu.name : `${linuxRuntime.gpu.state} — ${linuxRuntime.gpu.reason}`}</span></div>
+              </div>
+            </div>
+          ) : (
+            <EmptyState>{linuxRuntime && "error" in linuxRuntime ? `Linux node unreachable: ${linuxRuntime.error}` : "Linux node unreachable this sample."}</EmptyState>
+          )}
+        </CardBody>
+      </Card>
 
       <Card>
         <CardHeader

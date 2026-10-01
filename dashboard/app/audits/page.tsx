@@ -19,7 +19,7 @@ export default async function AuditDashboardPage() {
             CEO → Security → Bug Fixer → Engineer → CEO. Scope: orchestrator/**/*.py — the TypeScript dashboard isn&apos;t covered.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={1} />
+        <AutoRefresh intervalSeconds={5} />
       </div>
 
       {latest && (

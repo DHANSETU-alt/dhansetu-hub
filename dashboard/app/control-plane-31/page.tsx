@@ -30,7 +30,7 @@ export default async function ControlPlane31Page() {
             mission creation and other state-changing actions are gated behind founder approval that isn&apos;t wired up yet.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={1} />
+        <AutoRefresh intervalSeconds={5} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

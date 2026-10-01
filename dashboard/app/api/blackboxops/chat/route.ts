@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     // so real headroom, not a snappy-feeling short timeout that just
     // fails under normal load.
     const snapshot = await dashboardSnapshot();
-    const guidedMessage = `${snapshot}\n\nFOUNDER MESSAGE:\n${message}\n\nReview the snapshot first. Respond as Angella, the SHAKTHI_OS delivery partner: give the highest-priority unfinished item, a finish plan, blockers, and a clearly labeled FOUNDER ACTION REQUIRED list. Preserve the founder's intent.`;
+    const guidedMessage = `${snapshot}\n\nFOUNDER MESSAGE:\n${message}\n\nReview the snapshot first. Respond as Shakthi_Agent, the SHAKTHI_OS delivery partner: give the highest-priority unfinished item, a finish plan, blockers, and a clearly labeled FOUNDER ACTION REQUIRED list. Preserve the founder's intent.`;
     const { stdout } = await execFileAsync(
       "python3", ["-m", "orchestrator.cli", "--chat-message", guidedMessage, "--chat-agent", "pa_angella"],
       { cwd: PROJECT_ROOT, timeout: 110_000 }

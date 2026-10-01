@@ -7,9 +7,10 @@ either way.
 """
 import json
 
-from . import config, db, model_gateway
+from . import config, db, model_gateway, skills_library
 from .tools import dispatch, parsing
 from .tools import registry as tool_registry
+from .security_policy import ExecutionBudget, budget_exceeded, budget_started, prompt_context, redact_secrets
 
 CRITICAL_KEYWORDS = (
     "refund", "cancel subscription", "contract", "custom pricing", "legal",
@@ -84,6 +85,24 @@ NO_MEMORY_CONTEXT = (
 )
 
 
+def _local_cost_usd() -> float | None:
+    """0.0 for genuinely-free local Ollama; None (unknown, not a false
+    $0.00) for Codex -- real paid OpenAI usage this system doesn't have a
+    verified per-token price for. Matches the founder's own explicit
+    principle: unknown cost stays unknown, never fabricated as free."""
+    return 0.0 if config.LOCAL_PROVIDER == "ollama" else None
+
+
+def _local_model_label(agent_local_model: str) -> str:
+    """The agent's configured local_model (e.g. 'llama3.2') is an Ollama
+    model name -- meaningless and misleading once call_local() actually
+    dispatches to Codex, which ignores it and uses its own model per
+    ~/.codex/config.toml (no structured field for the real model name in
+    `codex exec --json`'s event stream, confirmed 2026-09-16). Label
+    honestly instead of passing through a name that was never used."""
+    return agent_local_model if config.LOCAL_PROVIDER == "ollama" else "codex-cli"
+
+
 def classify_risk(goal: str) -> str:
     lowered = goal.lower()
     if any(kw in lowered for kw in CRITICAL_KEYWORDS):
@@ -95,23 +114,48 @@ def classify_risk(goal: str) -> str:
     return "normal"
 
 
-def run_task(agent_id: str, goal: str, business_id: int | None = None, force_risk: str | None = None) -> dict:
+def run_task(agent_id: str, goal: str, business_id: int | None = None,
+             force_risk: str | None = None, source: str | None = None,
+             skill_hint: str | None = None) -> dict:
     with db.get_conn() as conn:
         agent = db.get_agent(conn, agent_id)
         if not agent:
             raise ValueError(f"Unknown agent '{agent_id}'. Run `python -m orchestrator.cli --list-agents`.")
 
+        # Optional: fold one externally-installed skill's real guidance
+        # (~/.agents/skills/, see skills_library.py) into this specific
+        # task's prompt. Opt-in per call, not injected into every agent by
+        # default -- most of the 25 installed skills (TDD, git workflow,
+        # security hardening...) only apply to a subset of the 58 agents'
+        # work, e.g. bug_fixer or chrome_developer, not customer_success.
+        if skill_hint:
+            skill_body = skills_library.load_skill(skill_hint)
+            if skill_body is None:
+                raise ValueError(f"Unknown skill '{skill_hint}'. See skills_library.list_skills().")
+            goal = f"Apply this skill's guidance to the task below:\n\n{skill_body}\n\n---\n\nTask:\n{goal}"
+
         risk = force_risk or classify_risk(goal)
-        task_id = db.insert_task(conn, agent_id, goal, business_id, risk)
-        db.log_event(conn, task_id, "dispatch", json.dumps({"risk": risk, "agent": agent_id}))
+        budget = ExecutionBudget()
+        started = budget_started()
+        source_note, authenticated = prompt_context(source)
+        safe_goal = redact_secrets(goal)
+        task_id = db.insert_task(conn, agent_id, safe_goal, business_id, risk)
+        db.log_event(conn, task_id, "dispatch", json.dumps({
+            "risk": risk, "agent": agent_id, "source": source_note,
+            "authenticated": authenticated,
+            "verification_required": agent_id not in ("qa", "memory"),
+            "budget": ExecutionBudget().__dict__,
+        }))
 
         if agent_id in NO_MEMORY_CONTEXT:
-            user_prompt = goal
+            user_prompt = safe_goal
         else:
             cross_tenant = agent["allowed_scope"] == "cross_tenant"
             memories = db.recent_memory(conn, business_id, cross_tenant=cross_tenant)
             memory_context = "\n".join(f"- {m['content']}" for m in memories) or "(none yet)"
-            user_prompt = f"Relevant memory:\n{memory_context}\n\nTask:\n{goal}"
+            user_prompt = f"Relevant memory:\n{memory_context}\n\nTask:\n{safe_goal}"
+
+        user_prompt = f"{source_note}\n\n{user_prompt}"
 
         allowed_tools = json.loads(agent.get("allowed_tools") or "[]")
         tools_prompt = tool_registry.describe_tools_for_agent(allowed_tools)
@@ -134,13 +178,21 @@ def run_task(agent_id: str, goal: str, business_id: int | None = None, force_ris
                     agent["local_model"], agent["role_prompt"], user_prompt
                 ),
             )
+            if budget_exceeded(started, budget):
+                db.log_event(conn, task_id, "budget_exceeded", json.dumps(budget.__dict__))
+                status = "failed"
+                output = "Execution budget exceeded; no further agent work was permitted."
             output = _maybe_execute_tool(conn, task_id, agent, business_id, output)
             db.update_task(conn, task_id, status, output)
             _write_memory(conn, task_id, agent, goal, output, business_id)
             return {"task_id": task_id, "status": status, "output": output, "escalated": True}
 
         text, tin, tout = model_gateway.call_local(agent["local_model"], agent["role_prompt"], user_prompt)
-        db.log_cost(conn, task_id, agent_id, agent["local_model"], "ollama", tin, tout, 0.0)
+        db.log_cost(conn, task_id, agent_id, _local_model_label(agent["local_model"]), config.LOCAL_PROVIDER, tin, tout, _local_cost_usd())
+        if budget_exceeded(started, budget):
+            db.log_event(conn, task_id, "budget_exceeded", json.dumps(budget.__dict__))
+            db.update_task(conn, task_id, "failed", "Execution budget exceeded; no further agent work was permitted.")
+            return {"task_id": task_id, "status": "failed", "output": "Execution budget exceeded; no further agent work was permitted.", "escalated": False}
 
         # qa/memory never get QA'd (they'd be reviewing themselves). ceo
         # is exempt too -- found live: QA's role is judging a PROPOSED
@@ -179,7 +231,7 @@ def _validate(conn, task_id: int, output: str, goal: str) -> tuple[bool, str]:
         return True, "no QA agent registered — validation skipped"
     prompt = f"Task goal: {goal}\n\nAgent output to review:\n{output}"
     text, tin, tout = model_gateway.call_local(qa_agent["local_model"], qa_agent["role_prompt"], prompt)
-    db.log_cost(conn, task_id, "qa", qa_agent["local_model"], "ollama", tin, tout, 0.0)
+    db.log_cost(conn, task_id, "qa", _local_model_label(qa_agent["local_model"]), config.LOCAL_PROVIDER, tin, tout, _local_cost_usd())
     passed = text.strip().upper().startswith("PASS")
     return passed, text
 
@@ -204,7 +256,7 @@ def _try_cloud(conn, task_id: int, agent: dict, user_prompt: str, local_fallback
         # there's truly nothing to fall back to.
         if local_fallback_text is None and local_fallback_fn is not None:
             local_fallback_text, tin, tout = local_fallback_fn()
-            db.log_cost(conn, task_id, agent["id"], agent["local_model"], "ollama", tin, tout, 0.0)
+            db.log_cost(conn, task_id, agent["id"], _local_model_label(agent["local_model"]), config.LOCAL_PROVIDER, tin, tout, _local_cost_usd())
         if local_fallback_text:
             return (f"{local_fallback_text}\n\n[Note: this is the local model's own output -- "
                     f"cloud escalation was attempted and unavailable: {e}]", "done_local_fallback")
@@ -229,6 +281,12 @@ def _write_memory(conn, task_id: int, agent: dict, goal: str, output: str, busin
     if not mem_agent or agent["id"] == "memory":
         return
     prompt = f"Task: {goal}\n\nResult:\n{output}"
-    text, tin, tout = model_gateway.call_local(mem_agent["local_model"], mem_agent["role_prompt"], prompt)
-    db.log_cost(conn, task_id, "memory", mem_agent["local_model"], "ollama", tin, tout, 0.0)
+    try:
+        text, tin, tout = model_gateway.call_local(mem_agent["local_model"], mem_agent["role_prompt"], prompt)
+    except model_gateway.ModelError as exc:
+        # Memory enrichment is best-effort. A local-model outage must not
+        # turn an otherwise recorded business task into a failed operation.
+        db.log_event(conn, task_id, "memory_unavailable", json.dumps({"error": str(exc)}))
+        return None
+    db.log_cost(conn, task_id, "memory", _local_model_label(mem_agent["local_model"]), config.LOCAL_PROVIDER, tin, tout, _local_cost_usd())
     db.insert_memory(conn, "project", text, business_id, tags=agent["id"])

@@ -8,6 +8,24 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 mkdir -p logs
 
+# The macOS CommandLineTools `python3` can be Python 3.9 even when a modern
+# Python is installed. The orchestrator uses modern typing syntax, so select
+# the newest compatible interpreter explicitly for reliable local launches.
+PYTHON_BIN=""
+for candidate in /usr/local/bin/python3.14 /opt/homebrew/bin/python3.14 /usr/local/bin/python3.13 /opt/homebrew/bin/python3.13 /usr/local/bin/python3.12 /opt/homebrew/bin/python3.12 /usr/local/bin/python3.11 /opt/homebrew/bin/python3.11 /usr/local/bin/python3.10 /opt/homebrew/bin/python3.10; do
+  if [ -x "$candidate" ]; then
+    PYTHON_BIN="$candidate"
+    break
+  fi
+done
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+
+# Linux GPU-first compute policy (2026-09-13, reaffirmed 2026-09-16): route
+# Ollama inference to the Linux box (gvc-ops-ai, RTX 2050) instead of the
+# Mac's own Ollama.app, so agent workloads don't load the Mac. Only applies
+# when the caller hasn't already overridden OLLAMA_HOST.
+export OLLAMA_HOST="${OLLAMA_HOST:-http://192.168.31.27:11434}"
+
 start_if_needed() {
   local name="$1" port="$2" pidfile="$3" logfile="$4"
   shift 4
@@ -25,7 +43,7 @@ start_if_needed() {
 }
 
 start_if_needed "API server" 8787 .api.pid logs/api.log \
-  python3 -m orchestrator.api
+  "$PYTHON_BIN" -m orchestrator.api
 
 start_if_needed "Dashboard" 3000 .dashboard.pid logs/dashboard.log \
   npm --prefix dashboard run dev

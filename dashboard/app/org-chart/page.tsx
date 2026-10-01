@@ -30,7 +30,7 @@ export default async function OrgChartPage() {
         <div>
           <h1 className="text-xl font-semibold">Org Chart</h1>
           <p className="text-sm text-[var(--muted-foreground)] mt-1">
-            One Angella, two CEO-led teams — {agents.length} real registered agents, from the actual agent registry, not illustrative.
+            One Shakthi_Agent, two CEO-led teams — {agents.length} real registered agents, from the actual agent registry, not illustrative.
           </p>
         </div>
         <AutoRefresh intervalSeconds={30} />

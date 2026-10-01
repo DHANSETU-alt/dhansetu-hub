@@ -75,7 +75,7 @@ export function OrgChartFlow({ agents }: { agents: Agent[] }) {
 
     if (angella) {
       nodes.push({ id: "angella", type: "org", position: { x: 0, y: 0 }, draggable: false,
-        data: { label: "ANGELLA", sublabel: "Orchestrator", color: "violet", size: "xl" } });
+        data: { label: "SHAKTHI_AGENT", sublabel: "Orchestrator", color: "violet", size: "xl" } });
     }
 
     const teamOffsetX = COLS * COL_GAP * 0.7;
@@ -94,8 +94,17 @@ export function OrgChartFlow({ agents }: { agents: Agent[] }) {
         const row = Math.floor(i / COLS);
         const x = ceoX - gridWidth / 2 + col * COL_GAP;
         const y = teamTop + row * ROW_GAP;
+        // dhansetu_manager's real registry name is "Dhansetu Assistant
+        // Manager" -- stripping only the "Dhansetu " prefix (as every other
+        // team node's label does) would leave the banned "Assistant
+        // Manager" phrase visible on this real, rendered chart. Special-
+        // cased rather than changing the generic strip, since no other
+        // real agent name collides with a removed-term list.
+        const label = agent.id.startsWith("dhansetu_manager")
+          ? `Dhansetu Specialist${agent.id.endsWith("_2") ? " (Team 2)" : ""}`
+          : agent.name.replace(" (Team 2)", "").replace("Shakthi ", "").replace("Dhansetu ", "");
         nodes.push({ id: agent.id, type: "org", position: { x, y }, draggable: false,
-          data: { label: agent.name.replace(" (Team 2)", "").replace("Shakthi ", "").replace("Dhansetu ", ""), sublabel: agent.squad?.split("—")[0].trim() ?? "", color: "amber", size: "sm" } });
+          data: { label, sublabel: agent.squad?.split("—")[0].trim() ?? "", color: "amber", size: "sm" } });
         edges.push({ id: `${ceo.id}-${agent.id}`, source: ceo.id, target: agent.id, type: "tree", data: { color: "amber" } });
       });
     });

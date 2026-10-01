@@ -38,7 +38,7 @@ export default async function ErtCommandCenterPage() {
             elsewhere — not a second set of thresholds.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={1} />
+        <AutoRefresh intervalSeconds={5} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

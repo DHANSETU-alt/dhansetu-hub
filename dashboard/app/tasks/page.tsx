@@ -16,7 +16,7 @@ export default async function TaskPipelinePage() {
             Every task dispatched by any agent — dispatch → local model → QA → (escalate?) → done.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={1} />
+        <AutoRefresh intervalSeconds={5} />
       </div>
 
       <div className="grid grid-cols-3 gap-4">

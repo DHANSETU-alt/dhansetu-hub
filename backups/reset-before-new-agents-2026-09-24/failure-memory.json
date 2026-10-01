@@ -1,0 +1,133 @@
+{
+  "generated_at": "2026-09-13T12:12:34.196970",
+  "generated_by": "scripts/export_failure_memory.py",
+  "count": 6,
+  "entries": [
+    {
+      "failure_id": "bug-1",
+      "date": "2026-08-23 08:15:32",
+      "agent": null,
+      "task_id": null,
+      "symptom": "File: tests/test_bug_fixer.py:61\nDangerous pattern: eval_call\nRecommendation: Review whether this can be replaced with an allowlisted, argv-based call.\n\nRESOLVED (real, verified 2026-08-31): false positive. tests/test_bug_fixer.py:61/66 are literal test strings inside test_eval_flagged/test_shell_true_flagged that verify the security scanner correctly DETECTS dangerous patterns -- they are never executed as real code. Same root cause already confirmed and closed for bug id=2 (duplicate from an earlier audit run of the same file/line).\n\nROOT CAUSE FIXED 2026-08-31: orchestrator/audit.py check_security() was scanning tests/ files alongside orchestrator/, so it kept re-flagging this same known-safe test string on every audit run. A purpose-built _orchestrator_files() helper already existed to prevent exactly this but was never wired in. Fixed check_security() to skip anything under tests/. Verified: real scanner now returns 0 findings on this codebase, full test suite 401/401 (was 399), 2 new regression tests added.",
+      "root_cause": "The code uses the dangerous `eval_call` pattern, which executes arbitrary code and constitutes a significant security vulnerability.",
+      "fix_applied": null,
+      "files_changed": [
+        "tests/test_bug_fixer.py"
+      ],
+      "prevention_rule": null,
+      "regression_check": {
+        "regression_count": 0,
+        "occurrence_count": 1,
+        "duplicate_of": null
+      },
+      "status": "closed",
+      "_source": "bugs",
+      "_linked_failure_analyses_ids": []
+    },
+    {
+      "failure_id": "bug-2",
+      "date": "2026-08-23 08:29:57",
+      "agent": null,
+      "task_id": null,
+      "symptom": "File: tests/test_bug_fixer.py:61\nDangerous pattern: eval_call\nRecommendation: Review whether this can be replaced with an allowlisted, argv-based call.\n\nROOT CAUSE FIXED 2026-08-31: orchestrator/audit.py check_security() was scanning tests/ files alongside orchestrator/, so it kept re-flagging this same known-safe test string on every audit run. A purpose-built _orchestrator_files() helper already existed to prevent exactly this but was never wired in. Fixed check_security() to skip anything under tests/. Verified: real scanner now returns 0 findings on this codebase, full test suite 401/401 (was 399), 2 new regression tests added.",
+      "root_cause": "False positive -- the flagged eval_call is inside tests/test_bug_fixer.py::test_eval_flagged, a literal test string asserting the security scanner correctly detects dangerous eval() calls. Not real executed code, not a real vulnerability.",
+      "fix_applied": null,
+      "files_changed": [
+        "tests/test_bug_fixer.py"
+      ],
+      "prevention_rule": null,
+      "regression_check": {
+        "regression_count": 0,
+        "occurrence_count": 1,
+        "duplicate_of": null
+      },
+      "status": "closed",
+      "_source": "bugs",
+      "_linked_failure_analyses_ids": []
+    },
+    {
+      "failure_id": "bug-3",
+      "date": "2026-08-23 08:39:44",
+      "agent": null,
+      "task_id": null,
+      "symptom": "File: tests/test_bug_fixer.py:66\nDangerous pattern: shell_true\nRecommendation: Review whether this can be replaced with an allowlisted, argv-based call.\n\nRESOLVED (real, verified 2026-08-31): false positive. tests/test_bug_fixer.py:61/66 are literal test strings inside test_eval_flagged/test_shell_true_flagged that verify the security scanner correctly DETECTS dangerous patterns -- they are never executed as real code. Same root cause already confirmed and closed for bug id=2 (duplicate from an earlier audit run of the same file/line).\n\nROOT CAUSE FIXED 2026-08-31: orchestrator/audit.py check_security() was scanning tests/ files alongside orchestrator/, so it kept re-flagging this same known-safe test string on every audit run. A purpose-built _orchestrator_files() helper already existed to prevent exactly this but was never wired in. Fixed check_security() to skip anything under tests/. Verified: real scanner now returns 0 findings on this codebase, full test suite 401/401 (was 399), 2 new regression tests added.",
+      "root_cause": "The code uses the 'shell_true' pattern, indicating direct or unsafe interaction with the operating system shell which poses a security risk (e.g., shell injection).",
+      "fix_applied": null,
+      "files_changed": [
+        "tests/test_bug_fixer.py"
+      ],
+      "prevention_rule": null,
+      "regression_check": {
+        "regression_count": 0,
+        "occurrence_count": 1,
+        "duplicate_of": null
+      },
+      "status": "closed",
+      "_source": "bugs",
+      "_linked_failure_analyses_ids": []
+    },
+    {
+      "failure_id": "bug-4",
+      "date": "2026-09-13 06:04:33",
+      "agent": null,
+      "task_id": null,
+      "symptom": "The \"Ask BlackboxOps_OS\" widget on blackboxops.co.in showed \"Couldn't reach the support bot right now\" for every real visitor question. Reproduced via real browser test and direct curl: POST /api/support/ask returned HTTP 401 {\"error\":\"Owner sign-in required\"}.",
+      "root_cause": "/api/support/ask was never added to PUBLIC_API_PREFIXES when the owner-auth gate went live 2026-08-31, so every unauthenticated real visitor request fell through to the owner-session check and was rejected.",
+      "fix_applied": "Added \"/api/support/ask\" to PUBLIC_API_PREFIXES in worker/index.ts (blackboxops-os). Also fixed a second, related bug in the same file discovered while investigating: worker/routes/support-bot.ts described SHAKTHI_OS internal founder tooling (CEO agent, Sentinel, ERT...) as if it were a BlackboxOps_OS customer feature, and quoted stale Rs.3,000/300-slot pricing from before the real 3-tier restructure. Rewrote productFacts() to list only the real live features (Business Planner, Offer Generator) and to read pricing dynamically from currentPrice().tiers so it cannot go stale again.",
+      "files_changed": [
+        "worker/index.ts"
+      ],
+      "prevention_rule": "Any new public-facing API route must be checked against PUBLIC_API_PREFIXES as part of the same change, not assumed. Any hardcoded product-facts/pricing text embedded in an AI system prompt should be derived from the same real data source the rest of the app uses (already done here for pricing; feature list is now the real live-modules list) rather than hand-maintained prose that can drift.",
+      "regression_check": {
+        "regression_count": 0,
+        "occurrence_count": 1,
+        "duplicate_of": null
+      },
+      "status": "verified",
+      "_source": "bugs",
+      "_linked_failure_analyses_ids": [
+        2
+      ]
+    },
+    {
+      "failure_id": "bug-5",
+      "date": "2026-09-13 06:42:32",
+      "agent": null,
+      "task_id": null,
+      "symptom": "After creating the real GA4 property and setting GA_MEASUREMENT_ID, gtag.js loaded fine (script-src allowed googletagmanager.com) but every real pageview beacon to google-analytics.com was silently CSP-blocked -- connect-src had no entry for it. Confirmed via a real network-request check showing zero /g/collect calls despite a successful script load.",
+      "root_cause": "The CSP added earlier the same night (a real security hardening pass) allowlisted connect-src for the app's own API and Razorpay, but GA4 was not live yet at that time, so google-analytics.com was never added. Enabling GA4 later did not re-trigger a CSP review.",
+      "fix_applied": "Added https://*.google-analytics.com and https://www.googletagmanager.com to connect-src. Verified via a real browser network-request check: the collect beacon fired with the correct Measurement ID and real domain, and GA4's own Realtime report showed 1 active user from the test visit.",
+      "files_changed": [
+        "worker/index.ts"
+      ],
+      "prevention_rule": "Whenever a previously-empty/placeholder third-party integration (analytics, chat widgets, embeds) is given a real ID and turned on, treat it as a CSP change too -- check connect-src/script-src/frame-src for that integration's real domains in the SAME change, and verify with a real network-request capture, not just 'the script loaded with no console error.'",
+      "regression_check": {
+        "regression_count": 0,
+        "occurrence_count": 1,
+        "duplicate_of": null
+      },
+      "status": "verified",
+      "_source": "bugs",
+      "_linked_failure_analyses_ids": [
+        3
+      ]
+    },
+    {
+      "failure_id": "analysis-1",
+      "date": "2026-08-24 16:49:45",
+      "agent": null,
+      "task_id": null,
+      "symptom": "routing.run_task()'s critical-risk branch called _try_cloud() with no local-model fallback. When ANTHROPIC_API_KEY wasn't set, CEO's highest-stakes decisions (cancel subscription, delete customer records, launch-readiness approval, a correction approval) returned a bare '[escalation unavailable]' error string with status='failed' instead of any real judgment. Found live via 4 real historical failures (tasks #10, #11, #19, #20) surfaced by the CEO Health Monitor's 'degraded' status.",
+      "root_cause": "An asymmetric fallback design: the normal-risk path had a local-model safety net for cloud failure, the critical-risk path did not, on an unstated assumption that critical-risk goals would always have cloud available.",
+      "fix_applied": "Added a lazy local_fallback_fn to the critical-risk branch's _try_cloud() call in orchestrator/routing.py -- when cloud fails, it now generates a real local-model decision instead of returning nothing. Verified live: re-ran the exact 'cancel subscription' goal that used to fail (task #10's category); it now returns a real, reasoned decision (status: revise, risk 9/10).",
+      "files_changed": [],
+      "prevention_rule": "Every call site of _try_cloud() in routing.py now supplies either a precomputed local_fallback_text or a local_fallback_fn -- there is no remaining no-fallback call site. Added tests/test_routing_ceo_fix.py::TestCriticalRiskLocalFallback asserting (a) a critical-risk CEO decision never returns status='failed' when a local model is available, and (b) a cloud-success path never pays the extra local-model cost, so the fix can't regress into always calling both.",
+      "regression_check": null,
+      "status": "closed",
+      "_source": "task_failure",
+      "_linked_failure_analyses_ids": [
+        1
+      ]
+    }
+  ]
+}

@@ -4,7 +4,8 @@
 # Nothing else to type. Closing this Terminal window does NOT stop the
 # servers (they're detached background processes) -- use
 # Stop_Shakthi_OS.command for that.
-cd "$(dirname "${BASH_SOURCE[0]}")"
+SHAKTHI_ROOT="/Users/apple/shakthi-os"
+cd "$SHAKTHI_ROOT"
 
 echo "Starting SHAKTHI OS..."
 ./start_dashboard.sh
@@ -13,8 +14,8 @@ echo
 echo "Opening dashboard in Chrome..."
 open -a "Google Chrome" "http://localhost:3000" 2>/dev/null || open "http://localhost:3000"
 
-echo "Opening LAUNCH_CHECKLIST.md (last session's notes)..."
-open "LAUNCH_CHECKLIST.md"
+echo "Opening Shakthi_OS1.0 active work list..."
+open "$SHAKTHI_ROOT/tasks/Shakthi_OS1.0.md"
 
 echo
 echo "SHAKTHI OS is running. You can close this window -- the servers keep running."

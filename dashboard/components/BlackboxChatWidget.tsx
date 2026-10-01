@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { SHAKTHI_OS_VERSION } from "@/lib/version";
 
 type Msg = { role: "user" | "bot"; text: string };
 
-// Real chat widget wired to PA Angella (routing.run_task via
-// --chat-message) -- not a scripted FAQ bot. Honestly reflects backend
+// Real chat widget wired to Shakthi_Agent (routing.run_task via
+// --chat-message, still dispatched through the real pa_angella agent
+// internally) -- not a scripted FAQ bot. Honestly reflects backend
 // state: if the orchestrator API isn't reachable, it shows asleep rather
 // than pretending to be available (founder's own explicit requirement).
 export function BlackboxChatWidget() {
@@ -74,7 +76,7 @@ export function BlackboxChatWidget() {
                 style={{ background: up ? "#4ade80" : "#5b6472", boxShadow: up ? "0 0 6px #4ade80" : "none" }}
               />
               <span className="text-sm font-medium" style={{ color: "#e8ecf1" }}>
-                {up === null ? "Checking…" : up ? "SHAKTHI_OS 3.2 · Angella" : "Asleep — system offline"}
+                {up === null ? "Checking…" : up ? `${SHAKTHI_OS_VERSION.osName} V${SHAKTHI_OS_VERSION.version} · Shakthi_Agent` : "Asleep — system offline"}
               </span>
             </div>
             <button onClick={() => setOpen(false)} className="text-xs" style={{ color: "#8b95a6" }}>close</button>
@@ -84,7 +86,7 @@ export function BlackboxChatWidget() {
             {messages.length === 0 && (
               <p className="text-xs" style={{ color: "#5b6472" }}>
                 {up
-                  ? "Ask Angella for a live dashboard review. She will rank unfinished work, plan the next steps, and call out authentication or manual actions that require you."
+                  ? "Ask Shakthi_Agent for a live dashboard review. It will rank unfinished work, plan the next steps, and call out authentication or manual actions that require you."
                   : "The system's asleep right now, so I can't answer live. Email support@dhansetuhub.in instead."}
               </p>
             )}

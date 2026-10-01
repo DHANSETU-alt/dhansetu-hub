@@ -249,7 +249,7 @@ export default async function InitiativesPage() {
             Unfinished work stays up top with what&rsquo;s actually left to do; finished work moves to the side.
           </p>
         </div>
-        <AutoRefresh intervalSeconds={1} />
+        <AutoRefresh intervalSeconds={5} />
       </div>
 
       <div className="flex flex-col xl:flex-row gap-6 items-start">

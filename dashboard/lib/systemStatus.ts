@@ -41,7 +41,7 @@ export const PERSONA_NAME: Record<string, string> = {
   course_writer: "Percy", customer_success: "Remy", data_intelligence: "Nia",
   dhansetu_manager: "Rex", email_handler: "Ollie", engineer: "Otis",
   finance: "Penny", knowledge: "Sage", manager: "Duke", marketing: "Ivy",
-  memory: "Pip", pa_angella: "Angella", prompt_writer: "Zara", qa: "Watson",
+  memory: "Pip", pa_angella: "Shakthi_Agent", prompt_writer: "Zara", qa: "Watson",
   reel_scripter: "Flick", sales: "Kai", security: "Ranger", website_builder: "Milo",
 };
 
@@ -55,7 +55,7 @@ export const PERSONA_FACE: Record<string, string> = {
   reel_scripter: "🕊️", sales: "🦅", security: "🦮", website_builder: "🐦‍⬛",
 };
 
-export async function loadSystemStatus() {
+async function loadSystemStatusUncached() {
   const [ceoHealth, workers, financeAll, securityLatest, bugsOpen, reviews, projects, knowledge, tasks, sentinelLatest, agentsResp] =
     await Promise.all([
       getCeoHealth(),
@@ -171,6 +171,10 @@ export async function loadSystemStatus() {
   // computed honestly -- shown as age-since-created instead of a fabricated
   // duration.
   const recentActivity = [...tasks.tasks].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 15);
+  const supportServices = {
+    hindsight: sentinelLatest.services?.hindsight ?? "unavailable",
+    paperclip: sentinelLatest.services?.paperclip ?? "unavailable",
+  };
 
   return {
     nodes,
@@ -179,6 +183,7 @@ export async function loadSystemStatus() {
     workers: workers.workers,
     loadBalancer: workers.load_balancer,
     sentinelOk: !!sentinelLatest.snapshot,
+    supportServices,
     recentActivity,
     kpis: {
       totalAgents: nodes.length,
@@ -189,3 +194,12 @@ export async function loadSystemStatus() {
     },
   };
 }
+
+// Mission Control fans out to many local API endpoints. Cache the aggregate
+// briefly so a refresh cannot pile up another full fan-out while the previous
+// one is still running. The UI remains visibly live, while the host avoids a
+// request storm during development and on the MacBook deployment.
+export const loadSystemStatus = unstable_cache(loadSystemStatusUncached, ["dhansetu-system-status"], {
+  revalidate: 15,
+});
+import { unstable_cache } from "next/cache";

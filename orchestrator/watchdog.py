@@ -66,6 +66,41 @@ VOICE_DENIAL_WINDOW_MIN = 30
 VOICE_DENIAL_THRESHOLD = 3
 
 
+def scan_wifi(state: dict) -> list:
+    """Best-effort macOS Wi-Fi privacy/availability check.
+
+    Stores only the last SSID in watchdog state (never credentials). A changed
+    SSID is informational because hotel captive portals and roaming are normal;
+    a disconnected interface is a warning. Non-macOS or restricted hosts are
+    reported as info rather than silently skipped.
+    """
+    try:
+        proc = subprocess.run(
+            ["networksetup", "-getairportnetwork", "en0"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return [{"category": "wifi_health", "severity": "info",
+                 "detail": f"Wi-Fi status unavailable: {e}"}]
+
+    output = (proc.stdout or proc.stderr).strip()
+    if "Current Wi-Fi Network:" not in output:
+        return [{"category": "wifi_health", "severity": "warning",
+                 "detail": "Wi-Fi is not connected -- hotel network/captive portal may require attention"}]
+
+    ssid = output.split("Current Wi-Fi Network:", 1)[1].strip()
+    if not ssid:
+        return [{"category": "wifi_health", "severity": "warning",
+                 "detail": "Wi-Fi reports no active network"}]
+
+    previous = state.get("watchdog_wifi_ssid")
+    state["watchdog_wifi_ssid"] = ssid
+    if previous and previous != ssid:
+        return [{"category": "wifi_health", "severity": "info",
+                 "detail": f"Wi-Fi network changed from {previous!r} to {ssid!r}; verify this is the intended hotel network"}]
+    return []
+
+
 def _sha256_file(path: Path) -> str | None:
     try:
         return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -207,6 +242,7 @@ def run_scan(state: dict) -> dict:
         all_findings += scan_cost_spike(conn, state)
         all_findings += scan_voice_probing(conn)
         all_findings += scan_unexpected_ports()
+        all_findings += scan_wifi(state)
 
         for f in all_findings:
             db.insert_watchdog_event(conn, f["category"], f["severity"], f["detail"])

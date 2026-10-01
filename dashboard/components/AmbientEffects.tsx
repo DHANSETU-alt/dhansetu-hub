@@ -19,8 +19,10 @@ export function MatrixRain() {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
+    const context = ctx;
 
     const fontSize = 15;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     let width = 0, height = 0, columns = 0, drops: number[] = [];
     const glyphs = "アイウエオカキクケコサシスセソ0123456789SHAKTHI";
     // Real matrix green, per the Executive Neural Network spec (§3) --
@@ -31,8 +33,11 @@ export function MatrixRain() {
 
     function resize() {
       if (!canvas) return;
-      width = canvas.width = canvas.offsetWidth;
-      height = canvas.height = canvas.offsetHeight;
+      width = canvas.offsetWidth;
+      height = canvas.offsetHeight;
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      context.setTransform(dpr, 0, 0, dpr, 0, 0);
       columns = Math.max(1, Math.floor(width / fontSize));
       drops = new Array(columns).fill(0).map(() => Math.random() * -50);
     }
@@ -50,18 +55,18 @@ export function MatrixRain() {
     let raf = 0;
     function draw() {
       if (!ctx) return;
-      ctx.fillStyle = "rgba(2,3,3,0.09)";
-      ctx.fillRect(0, 0, width, height);
-      ctx.font = `${fontSize}px monospace`;
+      context.fillStyle = "rgba(2,3,3,0.09)";
+      context.fillRect(0, 0, width, height);
+      context.font = `${fontSize}px monospace`;
       for (let i = 0; i < drops.length; i++) {
         const glyph = glyphs[Math.floor(Math.random() * glyphs.length)];
-        ctx.globalAlpha = edgeAlpha(i);
-        ctx.fillStyle = GREENS[(i + Math.floor(drops[i])) % GREENS.length];
-        ctx.fillText(glyph, i * fontSize, drops[i] * fontSize);
+        context.globalAlpha = edgeAlpha(i);
+        context.fillStyle = GREENS[(i + Math.floor(drops[i])) % GREENS.length];
+        context.fillText(glyph, i * fontSize, drops[i] * fontSize);
         if (drops[i] * fontSize > height && Math.random() > 0.975) drops[i] = 0;
         drops[i]++;
       }
-      ctx.globalAlpha = 1;
+      context.globalAlpha = 1;
       if (!reduceMotion) raf = requestAnimationFrame(draw);
     }
 
@@ -100,6 +105,7 @@ export function FireflySwarm({ count = 160 }: { count?: number }) {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
+    const context = ctx;
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const spriteSize = 48;
@@ -148,7 +154,7 @@ export function FireflySwarm({ count = 160 }: { count?: number }) {
       height = canvas.offsetHeight;
       canvas.width = width * dpr;
       canvas.height = height * dpr;
-      ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
+      context.setTransform(dpr, 0, 0, dpr, 0, 0);
       bugs = Array.from({ length: count }, spawn);
     }
     resize();
@@ -156,8 +162,7 @@ export function FireflySwarm({ count = 160 }: { count?: number }) {
 
     let raf = 0;
     function draw() {
-      if (!ctx) return;
-      ctx.clearRect(0, 0, width, height);
+      context.clearRect(0, 0, width, height);
       for (const b of bugs) {
         b.angle += (Math.random() - 0.5) * 0.22;
         b.x += Math.cos(b.angle) * b.speed;
@@ -169,10 +174,10 @@ export function FireflySwarm({ count = 160 }: { count?: number }) {
 
         b.blinkPhase += b.blinkSpeed;
         const blink = Math.max(0, Math.sin(b.blinkPhase));
-        ctx.globalAlpha = 0.12 + blink * 0.88;
-        ctx.drawImage(sprites[b.sprite], b.x - b.size / 2, b.y - b.size / 2, b.size, b.size);
+        context.globalAlpha = 0.12 + blink * 0.88;
+        context.drawImage(sprites[b.sprite], b.x - b.size / 2, b.y - b.size / 2, b.size, b.size);
       }
-      ctx.globalAlpha = 1;
+      context.globalAlpha = 1;
       raf = requestAnimationFrame(draw);
     }
     raf = requestAnimationFrame(draw);

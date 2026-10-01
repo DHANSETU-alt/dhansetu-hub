@@ -32,9 +32,8 @@ export default async function DhansetuAiPage() {
         <div>
           <h1 className="text-xl font-semibold">Dhansetu AI</h1>
           <p className="text-sm text-[var(--muted-foreground)] mt-1">
-            Course-selling branch, kept separate from Sales/Marketing on purpose. PA Angella refines the founder&apos;s
-            requests for the CEO; the Assistant Manager and 4 specialists below handle course drafting, visual
-            prompts, reel scripts, and post captions — in Gujarati by default.
+            Course-selling branch, kept separate from Sales/Marketing on purpose. Shakthi_Agent orchestrates the squad
+            below — course drafting, visual prompts, reel scripts, and post captions — in Gujarati by default.
           </p>
         </div>
         <Badge tone="local">Instagram only, for now</Badge>
@@ -58,21 +57,22 @@ export default async function DhansetuAiPage() {
       </div>
 
       <Card>
-        <CardHeader title="The branch" subtitle="PA Angella (top-level) + the Dhansetu AI squad — separate from Sales/Marketing" />
+        <CardHeader title="The branch" subtitle="Shakthi_Agent + the Dhansetu AI squad — separate from Sales/Marketing" />
         <CardBody>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {pa && (
               <div className="rounded-lg border border-[var(--border)] p-3">
-                <div className="text-sm font-medium">{pa.name}</div>
-                <div className="text-xs text-[var(--muted-foreground)] mt-0.5">Founder ↔ CEO relay</div>
+                <div className="text-sm font-medium">Shakthi_Agent</div>
+                <div className="text-xs text-[var(--muted-foreground)] mt-0.5">Single orchestration layer</div>
               </div>
             )}
             {squadAgents.map((a) => (
               <div key={a.id} className="rounded-lg border border-[var(--border)] p-3">
-                <div className="text-sm font-medium">{a.name}</div>
-                <div className="text-xs text-[var(--muted-foreground)] mt-0.5">
-                  {a.id === "dhansetu_manager" ? "Assistant Manager (hub)" : "Specialist"}
-                </div>
+                {/* Real DB name for dhansetu_manager is "Dhansetu Assistant Manager" --
+                    displayed here as a plain specialist under Shakthi_Agent rather than
+                    a named hierarchy hub, per the single-identity UI requirement. */}
+                <div className="text-sm font-medium">{a.id === "dhansetu_manager" ? "Dhansetu Specialist" : a.name}</div>
+                <div className="text-xs text-[var(--muted-foreground)] mt-0.5">Specialist</div>
               </div>
             ))}
           </div>

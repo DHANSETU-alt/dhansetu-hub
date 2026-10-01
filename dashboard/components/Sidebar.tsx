@@ -7,10 +7,16 @@ import { AngellaPresence } from "@/components/AngellaPresence";
 import { SHAKTHI_OS_VERSION } from "@/lib/version";
 import type { PaAngellaStatus } from "@/lib/api";
 
-// Shakthi_OS is Mac-only as of 2026-09-08 -- the Mac<->Linux double-brain
-// bridge (sync_bridge.py) was retired. This badge answers "which machine
-// am I looking at" at a glance, straight from this specific server's own
-// hostname -- never guessed from the URL bar.
+// Went Mac-only 2026-09-08, then the Linux box was wiped 2026-09-13 and
+// the mirror wasn't redeployed -- so "Mac-only" was true by accident, not
+// by design, until the founder asked for the mirror back 2026-09-16. Real
+// dual-machine again as of that date: this exact codebase + a copy of
+// shakthi.db now also runs on the Linux GPU box (gvc-OPS-AI,
+// 192.168.31.27:3000), with sync_bridge.py doing the same Mac-wins
+// initiatives sync as before. This badge answers "which machine am I
+// looking at" at a glance, straight from THIS specific server's own
+// hostname (same-origin fetch, same code on both machines) -- never
+// guessed from the URL bar, so it's correct on either dashboard.
 function MachineBadge() {
   const [hostname, setHostname] = useState<string | null>(null);
 
@@ -43,8 +49,8 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { href: "/command-center", label: "Founder Command Center" },
       { href: "/initiatives", label: "Founder Tasks" },
       { href: "/mission-control", label: "Mission Control" },
+      { href: "/jarvis", label: "Shakthi_Agent Mission Graph" },
       { href: "/org-chart", label: "Org Chart" },
-      { href: "/connections", label: "Connections & readiness" },
     ],
   },
   {
@@ -60,6 +66,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { href: "/control-plane-31", label: "Control Plane 3.1" },
       { href: "/correction", label: "Correction Bot" },
       { href: "/failure-analyses", label: "Failure Analysis Engine" },
+      { href: "/readiness", label: "Revenue Readiness (v3.4)" },
       { href: "/chrome-developer", label: "Chrome Developer" },
     ],
   },
@@ -110,7 +117,7 @@ export function Sidebar({ angellaStatus }: { angellaStatus?: PaAngellaStatus | n
           title={`${SHAKTHI_OS_VERSION.codename} · commit ${SHAKTHI_OS_VERSION.gitCommit} · ${SHAKTHI_OS_VERSION.environment}`}
         >
           <span className="text-[var(--ink)] font-semibold">{SHAKTHI_OS_VERSION.osName}</span>
-          <span>v{SHAKTHI_OS_VERSION.version}</span>
+          <span>V{SHAKTHI_OS_VERSION.version}</span>
           <span className="opacity-60">&bull;</span>
           <span className="uppercase tracking-wide">{SHAKTHI_OS_VERSION.environment}</span>
         </div>
