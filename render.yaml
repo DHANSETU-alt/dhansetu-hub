@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: dhansetu-hub
+    runtime: node
+    buildCommand: "bash build.sh"
+    startCommand: "cd dashboard && npm start"
+    envVars:
+      - key: NODE_ENV
+        value: production
