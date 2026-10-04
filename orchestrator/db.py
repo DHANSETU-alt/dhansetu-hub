@@ -57,6 +57,7 @@ def init_db():
         _migrate_task_verification_columns(conn)
         _migrate_failure_analyses_agent_column(conn)
         _migrate_payment_transaction_columns(conn)
+        _migrate_peopledesk_tickets_tables(conn)
         # Phase 2 Authentication: users and sessions tables are created via schema.sql
         # (CREATE TABLE IF NOT EXISTS), so no migration function needed
 
@@ -129,6 +130,52 @@ def _migrate_initiatives_context_columns(conn):
         conn.execute("ALTER TABLE initiatives ADD COLUMN context TEXT")
     if "cloned_from_id" not in cols:
         conn.execute("ALTER TABLE initiatives ADD COLUMN cloned_from_id INTEGER REFERENCES initiatives(id)")
+
+
+def _migrate_peopledesk_tickets_tables(conn):
+    """v1.2 upgrade: Add PeopleDesk ticket management tables for customer support system.
+    Tables: peopledesk_tickets (ticket records with SLA tracking), peopledesk_comments (ticket comments)"""
+    # Create tickets table if it doesn't exist
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS peopledesk_tickets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id TEXT UNIQUE NOT NULL,
+            customer_id TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            description TEXT NOT NULL,
+            priority TEXT NOT NULL DEFAULT 'medium',
+            status TEXT NOT NULL DEFAULT 'open',
+            assigned_to TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            first_response_at TEXT,
+            resolved_at TEXT,
+            response_time_minutes INTEGER,
+            resolution_time_minutes INTEGER,
+            sla_breached BOOLEAN DEFAULT 0
+        )
+    """)
+
+    # Create comments table if it doesn't exist
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS peopledesk_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            comment_id TEXT UNIQUE NOT NULL,
+            ticket_id TEXT NOT NULL,
+            author_type TEXT NOT NULL,
+            author_id TEXT NOT NULL,
+            message TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (ticket_id) REFERENCES peopledesk_tickets(ticket_id)
+        )
+    """)
+
+    # Create indices for performance
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tickets_customer ON peopledesk_tickets(customer_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tickets_status ON peopledesk_tickets(status)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tickets_created ON peopledesk_tickets(created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_comments_ticket ON peopledesk_comments(ticket_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_comments_created ON peopledesk_comments(created_at)")
 
 
 def upsert_agent(conn, agent: dict):
@@ -2446,6 +2493,80 @@ def invalidate_session(conn, session_id: str):
 def cleanup_expired_sessions(conn):
     """Delete all expired sessions (called periodically or on app startup)."""
     conn.execute("DELETE FROM sessions WHERE datetime(expires_at) <= datetime('now')")
+
+
+def create_ticket(conn, ticket_id: str, customer_id: str, subject: str, description: str, priority: str = "medium") -> dict:
+    """Create a new support ticket."""
+    now = __import__('datetime').datetime.utcnow().isoformat()
+    conn.execute(
+        """INSERT INTO peopledesk_tickets
+           (ticket_id, customer_id, subject, description, priority, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 'open', ?, ?)""",
+        (ticket_id, customer_id, subject, description, priority, now, now)
+    )
+    return get_ticket(conn, ticket_id)
+
+
+def get_ticket(conn, ticket_id: str) -> dict:
+    """Retrieve a ticket by ID."""
+    ticket = conn.execute("SELECT * FROM peopledesk_tickets WHERE ticket_id = ?", (ticket_id,)).fetchone()
+    return dict(ticket) if ticket else None
+
+
+def list_tickets(conn, customer_id: str = None, status: str = None) -> list:
+    """List tickets, optionally filtered by customer_id or status."""
+    query = "SELECT * FROM peopledesk_tickets"
+    params = []
+    where_clauses = []
+
+    if customer_id:
+        where_clauses.append("customer_id = ?")
+        params.append(customer_id)
+    if status:
+        where_clauses.append("status = ?")
+        params.append(status)
+
+    if where_clauses:
+        query += " WHERE " + " AND ".join(where_clauses)
+
+    query += " ORDER BY created_at DESC"
+    return [dict(row) for row in conn.execute(query, params).fetchall()]
+
+
+def update_ticket(conn, ticket_id: str, **updates) -> dict:
+    """Update a ticket's status, assignment, or response tracking."""
+    valid_fields = {"status", "assigned_to", "first_response_at", "resolved_at", "response_time_minutes", "resolution_time_minutes", "sla_breached"}
+    updates = {k: v for k, v in updates.items() if k in valid_fields}
+
+    if not updates:
+        return get_ticket(conn, ticket_id)
+
+    updates["updated_at"] = __import__('datetime').datetime.utcnow().isoformat()
+    set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
+    values = list(updates.values()) + [ticket_id]
+
+    conn.execute(f"UPDATE peopledesk_tickets SET {set_clause} WHERE ticket_id = ?", values)
+    return get_ticket(conn, ticket_id)
+
+
+def add_comment(conn, comment_id: str, ticket_id: str, author_type: str, author_id: str, message: str) -> dict:
+    """Add a comment to a ticket."""
+    now = __import__('datetime').datetime.utcnow().isoformat()
+    conn.execute(
+        """INSERT INTO peopledesk_comments
+           (comment_id, ticket_id, author_type, author_id, message, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (comment_id, ticket_id, author_type, author_id, message, now)
+    )
+    return dict(conn.execute("SELECT * FROM peopledesk_comments WHERE comment_id = ?", (comment_id,)).fetchone())
+
+
+def get_ticket_comments(conn, ticket_id: str) -> list:
+    """Get all comments for a ticket."""
+    return [dict(row) for row in conn.execute(
+        "SELECT * FROM peopledesk_comments WHERE ticket_id = ? ORDER BY created_at ASC",
+        (ticket_id,)
+    ).fetchall()]
 
 
 def get_user_by_email(conn, email: str):

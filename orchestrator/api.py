@@ -1338,6 +1338,24 @@ class Handler(BaseHTTPRequestHandler):
                 result = personal_plane.create_task(body.get("title", ""), body.get("goal_id"), actor_id, actor_role, request_id)
             elif parsed.path == "/api/personal/reminders":
                 result = personal_plane.create_reminder(body.get("title", ""), body.get("due_at", ""), actor_id, actor_role, request_id)
+            elif parsed.path == "/api/peopledesk/support-ticket":
+                from . import peopledesk
+                result = peopledesk.create_support_ticket(
+                    ticket_id=body.get("ticket_id", ""),
+                    customer_id=body.get("customer_id", ""),
+                    subject=body.get("subject", ""),
+                    description=body.get("description", ""),
+                    priority=body.get("priority", "medium")
+                )
+            elif parsed.path == "/api/peopledesk/ticket-comment":
+                from . import peopledesk
+                result = peopledesk.add_ticket_comment(
+                    comment_id=body.get("comment_id", ""),
+                    ticket_id=body.get("ticket_id", ""),
+                    author_type=body.get("author_type", ""),
+                    author_id=body.get("author_id", ""),
+                    message=body.get("message", "")
+                )
             else:
                 self._send(404, {"error": f"no such route: {parsed.path}"}, extra_headers=rate_limit_headers)
                 return

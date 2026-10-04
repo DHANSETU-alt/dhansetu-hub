@@ -49,34 +49,49 @@ export async function POST(req: NextRequest) {
     const ticketId = `ticket_${Date.now()}_${session.user_id.substring(0, 8)}`;
     const now = new Date().toISOString();
 
-    const ticket = {
-      id: ticketId,
-      customer_id: session.user_id,
-      subject,
-      description,
-      priority,
-      status: "open",
-      assigned_to: null,
-      created_at: now,
-      updated_at: now,
-      resolved_at: null,
-      first_response_at: null,
-    };
-
-    // TODO: Store in database
-    // In production, call the Python orchestrator API to persist this
-
-    return NextResponse.json(
-      {
-        success: true,
-        data: ticket,
-        meta: {
-          userId: session.user_id,
-          createdAt: now,
+    try {
+      const orchestratorUrl = process.env.ORCHESTRATOR_URL || "http://localhost:8000";
+      const createResponse = await fetch(`${orchestratorUrl}/api/peopledesk/support-ticket`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      },
-      { status: 201 }
-    );
+        body: JSON.stringify({
+          ticket_id: ticketId,
+          customer_id: session.user_id,
+          subject,
+          description,
+          priority,
+        }),
+      });
+
+      if (!createResponse.ok) {
+        return NextResponse.json(
+          { error: "Failed to create ticket in database" },
+          { status: 500 }
+        );
+      }
+
+      const ticket = await createResponse.json();
+
+      return NextResponse.json(
+        {
+          success: true,
+          data: ticket,
+          meta: {
+            userId: session.user_id,
+            createdAt: ticket.created_at,
+          },
+        },
+        { status: 201 }
+      );
+    } catch (orchestratorError) {
+      console.error("[peopledesk/ticket] Orchestrator error:", orchestratorError);
+      return NextResponse.json(
+        { error: "Failed to communicate with backend" },
+        { status: 503 }
+      );
+    }
   } catch (error) {
     console.error("[peopledesk/ticket] Error:", error);
     return NextResponse.json(

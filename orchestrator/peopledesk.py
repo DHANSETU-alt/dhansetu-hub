@@ -81,3 +81,73 @@ def payroll_summary(owner_email: str, date_from: str, date_to: str) -> list:
             "payable_days": payable_days, "amount_inr": amount,
         })
     return summary
+
+
+# ===== PeopleDesk Customer Support Tickets (v1.2) =====
+
+def create_support_ticket(ticket_id: str, customer_id: str, subject: str, description: str,
+                         priority: str = "medium") -> dict:
+    """Create a new customer support ticket."""
+    if priority not in ("high", "medium", "low"):
+        raise ValueError("priority must be high|medium|low")
+    if not subject or not description:
+        raise ValueError("subject and description are required")
+
+    with db.get_conn() as conn:
+        return db.create_ticket(conn, ticket_id, customer_id, subject, description, priority)
+
+
+def get_support_ticket(ticket_id: str) -> dict:
+    """Retrieve a support ticket."""
+    with db.get_conn() as conn:
+        ticket = db.get_ticket(conn, ticket_id)
+        if not ticket:
+            return None
+        ticket["comments"] = db.get_ticket_comments(conn, ticket_id)
+        return ticket
+
+
+def list_support_tickets(customer_id: str = None, status: str = None) -> list:
+    """List support tickets, optionally filtered."""
+    if status and status not in ("open", "in_progress", "resolved", "closed"):
+        raise ValueError("status must be open|in_progress|resolved|closed")
+
+    with db.get_conn() as conn:
+        return db.list_tickets(conn, customer_id=customer_id, status=status)
+
+
+def update_ticket_status(ticket_id: str, status: str, assigned_to: str = None) -> dict:
+    """Update a ticket's status and assignment."""
+    if status not in ("open", "in_progress", "resolved", "closed"):
+        raise ValueError("status must be open|in_progress|resolved|closed")
+
+    with db.get_conn() as conn:
+        updates = {"status": status}
+        if assigned_to:
+            updates["assigned_to"] = assigned_to
+        return db.update_ticket(conn, ticket_id, **updates)
+
+
+def add_ticket_comment(comment_id: str, ticket_id: str, author_type: str, author_id: str,
+                      message: str) -> dict:
+    """Add a comment to a support ticket. Updates first_response_at if support agent responds."""
+    if author_type not in ("customer", "support"):
+        raise ValueError("author_type must be customer|support")
+    if not message or message.strip() == "":
+        raise ValueError("message cannot be empty")
+
+    with db.get_conn() as conn:
+        comment = db.add_comment(conn, comment_id, ticket_id, author_type, author_id, message)
+
+        if author_type == "support":
+            ticket = db.get_ticket(conn, ticket_id)
+            if ticket and not ticket.get("first_response_at"):
+                db.update_ticket(conn, ticket_id, first_response_at=comment["created_at"])
+
+        return comment
+
+
+def get_ticket_comments(ticket_id: str) -> list:
+    """Get all comments for a ticket."""
+    with db.get_conn() as conn:
+        return db.get_ticket_comments(conn, ticket_id)
