@@ -1,0 +1,11 @@
+{
+  "name": "dhansetuhub-monorepo",
+  "version": "1.0.0",
+  "description": "DhanSetu Hub - Premium redesign deployment",
+  "scripts": {
+    "build": "cd dashboard && npm ci && npm run build",
+    "start": "cd dashboard && npm start",
+    "dev": "cd dashboard && npm run dev"
+  },
+  "private": true
+}
