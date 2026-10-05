@@ -24,8 +24,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# CLAUDFLAIR SSD mount point
-SSD_MOUNT_POINT = Path("/Volumes/CLAUDFLAIR_SSD")
+# DhanSetuSSD mount point (external SSD)
+SSD_MOUNT_POINT = Path("/Volumes/DhanSetuSSD")
 
 # Directory structure on SSD
 SSD_DIRS = {

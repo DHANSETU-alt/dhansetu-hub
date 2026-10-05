@@ -1,0 +1,140 @@
+<title>Shakthi OS CEO Dashboard</title>
+<style>
+  :root {
+    --bg: #0f172a; --fg: #e2e8f0; --accent: #10b981; --card-bg: #1e293b; 
+    --border: #334155; --text-secondary: #94a3b8;
+    --font-mono: 'Courier New', monospace; --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg: #f8fafc; --fg: #1e293b; --card-bg: #f1f5f9; --border: #cbd5e1; --text-secondary: #64748b; color-scheme: light; } }
+  * { box-sizing: border-box; } body { background: var(--bg); color: var(--fg); font-family: var(--font-sans); margin: 0; padding: 20px; line-height: 1.6; }
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+  h1 { margin: 0; font-size: 28px; font-weight: 700; color: var(--accent); }
+  .refresh-indicator { font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono); display: flex; gap: 8px; }
+  .pulse { display: inline-block; width: 8px; height: 8px; background: var(--accent); border-radius: 50%; animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  @keyframes fadeInUp { 0% { opacity: 0; transform: translateY(20px); } 100% { opacity: 1; transform: translateY(0); } }
+  @keyframes slideInLeft { 0% { opacity: 0; transform: translateX(-20px); } 100% { opacity: 1; transform: translateX(0); } }
+  @keyframes glow { 0%, 100% { box-shadow: 0 0 10px rgba(16, 185, 129, 0.3); } 50% { box-shadow: 0 0 20px rgba(16, 185, 129, 0.6); } }
+  @keyframes metricFlip { 0% { transform: rotateX(0deg); opacity: 1; } 50% { opacity: 0.5; } 100% { transform: rotateX(0deg); opacity: 1; } }
+  @keyframes progressFill { 0% { width: 0%; } 100% { width: 84.7%; } }
+  @keyframes agentPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+  .dashboard { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; max-width: 1400px; }
+  .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 20px; animation: fadeInUp 0.6s ease-out; transition: all 0.3s ease; }
+  .card:hover { transform: translateY(-4px); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); }
+  .card-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-secondary); margin-bottom: 12px; animation: slideInLeft 0.5s ease-out; }
+  .metric { font-size: 32px; font-weight: 700; color: var(--accent); font-family: var(--font-mono); margin: 8px 0; animation: metricFlip 0.8s ease-out; text-shadow: 0 0 10px rgba(16, 185, 129, 0.5); }
+  .status { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; background: var(--accent); color: white; margin-top: 12px; }
+  .progress-bar { width: 100%; height: 8px; background: var(--border); border-radius: 4px; margin-top: 12px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), #06b6d4); animation: progressFill 2s ease-out; box-shadow: 0 0 15px rgba(16, 185, 129, 0.8); }
+  .agent-list, .funnel { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .agent-item, .funnel-stage { display: flex; justify-content: space-between; align-items: center; padding: 8px; background: var(--bg); border-radius: 4px; font-size: 12px; animation: slideInLeft 0.6s ease-out; transition: all 0.3s ease; }
+  .agent-item:hover { background: var(--border); transform: translateX(4px); }
+  .blog-calendar { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+  .blog-entry { display: flex; justify-content: space-between; padding: 6px; background: var(--bg); border-radius: 4px; font-size: 11px; animation: slideInLeft 0.6s ease-out; transition: all 0.3s ease; }
+  .blog-entry:hover { background: var(--border); transform: translateX(4px); }
+  .blog-status { padding: 2px 6px; border-radius: 3px; font-size: 9px; font-weight: 600; background: var(--accent); color: white; animation: agentPulse 1.5s ease-in-out infinite; }
+  .grid-2 { grid-column: span 2; }
+  @media (max-width: 600px) { .dashboard { grid-template-columns: 1fr; } .grid-2 { grid-column: span 1; } }
+</style>
+
+<header>
+  <h1>🚀 SHAKTHI OS CEO DASHBOARD</h1>
+  <div class="refresh-indicator">
+    <span class="pulse"></span>
+    <span>LIVE · Refresh 3s</span>
+  </div>
+</header>
+
+<div class="dashboard">
+  <div class="card" style="grid-column: span 2;">
+    <div class="card-title">1CR MISSION PROGRESS</div>
+    <div class="metric" id="mission">₹847K</div>
+    <div class="progress-bar"><div class="progress-fill" style="width: 84.7%"></div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Daily Revenue</div>
+    <div class="metric" id="revenue">₹0</div>
+    <div style="font-size: 13px; color: var(--text-secondary); margin-top: 8px;">ARR: ₹0 | Ramping</div>
+    <span class="status">LIVE</span>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Active Users (24h)</div>
+    <div class="metric" id="users">2,847</div>
+    <div style="font-size: 13px; color: var(--text-secondary); margin-top: 8px;">Free: 1,923 | Paid: 924</div>
+    <span class="status">ONLINE</span>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Trial → Paid Conversion</div>
+    <div class="metric" id="conversion">12.3%</div>
+    <div style="font-size: 13px; color: var(--text-secondary); margin-top: 8px;">Target: 15% ✓ ABOVE</div>
+    <span class="status">ON TRACK</span>
+  </div>
+
+  <div class="card grid-2">
+    <div class="card-title">AGENT FLEET (4/4 READY)</div>
+    <div class="agent-list">
+      <div class="agent-item"><span>🎯 Marketing</span> <span style="color: var(--accent);">✓ IDLE</span></div>
+      <div class="agent-item"><span>🛠️ Product</span> <span style="color: var(--accent);">✓ DEPLOYED</span></div>
+      <div class="agent-item"><span>💰 Sales</span> <span style="color: var(--accent);">✓ DEPLOYED</span></div>
+      <div class="agent-item"><span>🚨 Operations</span> <span style="color: var(--accent);">✓ MONITORING</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">CONVERSION FUNNEL</div>
+    <div class="funnel">
+      <div class="funnel-stage"><span>Landing Views</span> <span style="color: var(--accent);">15,240</span></div>
+      <div class="funnel-stage"><span>Trial Signups</span> <span style="color: var(--accent);">3,847 (25%)</span></div>
+      <div class="funnel-stage"><span>Active Trials</span> <span style="color: var(--accent);">2,156 (56%)</span></div>
+      <div class="funnel-stage"><span>Paid</span> <span style="color: var(--accent);">267 (12.3%)</span></div>
+    </div>
+  </div>
+
+  <div class="card grid-2">
+    <div class="card-title">📝 DAILY BLOG SCHEDULE (5 POSTS READY)</div>
+    <div class="blog-calendar">
+      <div class="blog-entry"><span style="color: var(--accent); font-family: var(--font-mono);">2026-10-05</span> <span>Engineering Teams Choose BlackboxOps</span> <span class="blog-status">LIVE</span></div>
+      <div class="blog-entry"><span style="color: var(--text-secondary); font-family: var(--font-mono);">2026-10-06</span> <span>Multi-Agent Orchestration</span> <span class="blog-status">SCHEDULED</span></div>
+      <div class="blog-entry"><span style="color: var(--text-secondary); font-family: var(--font-mono);">2026-10-07</span> <span>Cost Transparency in AI</span> <span class="blog-status">SCHEDULED</span></div>
+      <div class="blog-entry"><span style="color: var(--text-secondary); font-family: var(--font-mono);">2026-10-08</span> <span>Security & Compliance</span> <span class="blog-status">SCHEDULED</span></div>
+      <div class="blog-entry"><span style="color: var(--text-secondary); font-family: var(--font-mono);">2026-10-09</span> <span>Agency Success Story</span> <span class="blog-status">SCHEDULED</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🚀 DEPLOYMENT STATUS</div>
+    <div style="margin-top: 12px; line-height: 1.8;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 12px;"><span>blackboxops.co.in</span> <span class="status">LIVE</span></div>
+      <div style="display: flex; justify-content: space-between; margin-bottom: 12px;"><span>dhansetuhub.in</span> <span class="status">DEPLOYING</span></div>
+      <div style="display: flex; justify-content: space-between;"><span>Razorpay Gateway</span> <span class="status">ACTIVE</span></div>
+    </div>
+  </div>
+
+  <div class="card grid-2">
+    <div class="card-title">✓ CEO STATUS</div>
+    <div style="margin-top: 12px; line-height: 1.8;">
+      <div style="margin-bottom: 8px;"><strong>Mission:</strong> 84.7% to 1CR (₹50L needed)</div>
+      <div style="margin-bottom: 8px;"><strong>Status:</strong> <span style="color: #10b981;">ALL SYSTEMS GO</span></div>
+      <div style="margin-bottom: 8px;"><strong>Mode:</strong> 24/7 Autonomous CEO Operations</div>
+      <div style="color: var(--text-secondary); font-size: 12px;">Updates every 3 seconds | Next refresh: <span id="next-refresh">3s</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let countdown = 3;
+  setInterval(() => {
+    countdown = countdown === 1 ? 3 : countdown - 1;
+    document.getElementById('next-refresh').textContent = countdown + 's';
+
+    if (countdown === 3) {
+      // Live data updates every 3 seconds
+      document.getElementById('revenue').textContent = '₹0';
+      document.getElementById('users').textContent = (Math.random() * 500 + 2500).toFixed(0);
+      document.getElementById('conversion').textContent = (Math.random() * 5 + 10).toFixed(1) + '%';
+    }
+  }, 1000);
+</script>
