@@ -17,7 +17,7 @@ Observed on 19 October 2026:
 ## Changes
 
 - Restore covered paid purchases instead of creating another Razorpay order.
-- Reuse matching unresolved orders; fetch the matching captured payment and retry the idempotent entitlement grant before returning recovery.
+- Check all covered unresolved orders before reusing any unpaid order; fetch the matching captured payment and retry the idempotent entitlement grant before returning recovery.
 - Reconcile the authenticated user's order while polling the recovery page, so failed browser callbacks and delayed webhooks do not require a second checkout.
 - Preserve an upgrade path from Pro to All Access.
 - Guard duplicate clicks and Razorpay script readiness; recover from failed network/JSON requests.
@@ -29,7 +29,7 @@ Observed on 19 October 2026:
 
 ## Verification and limits
 
-`npm test`: 46 tests passed, including direct mocked route tests for purchase restoration, pending-order reuse, bundled access and server prices.
+`npm test`: 48 tests passed, including direct mocked route tests for purchase restoration, pending-order reuse, bundled access and server prices.
 `npm run lint`: no errors; three existing warnings (fonts, image element, unused eslint directive).
 `npm run typecheck`: passed after correcting the browser timer type.
 `npm run build`: passed, including standalone output and postbuild asset copy.

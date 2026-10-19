@@ -56,6 +56,24 @@ describe("checkout order route", () => {
     expect((await POST(request())).status).toBe(503);
     expect(mocks.grant).not.toHaveBeenCalled(); expect(mocks.create).not.toHaveBeenCalled();
   });
+  it("finds an older captured order before reopening a newer unpaid order", async () => {
+    mocks.purchases.mockResolvedValue([
+      { status: "created", tier: "smartbudget_pro", razorpay_order_id: "order_newer" },
+      { status: "created", tier: "smartbudget_pro", razorpay_order_id: "order_older" },
+    ]);
+    const details = { amount: 14900, currency: "INR", notes: { user_id: "user-1", tier: "smartbudget_pro" } };
+    mocks.fetch.mockResolvedValueOnce({ ...details, id: "order_newer", status: "created" }).mockResolvedValueOnce({ ...details, id: "order_older", status: "paid" });
+    expect(await (await POST(request())).json()).toEqual({ recovery: true, orderId: "order_older" });
+    expect(mocks.grant).toHaveBeenCalledWith("order_older", "pay_captured", "user-1", "smartbudget_pro", "customer@example.test");
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+  it("recovers an unresolved paid All Access order before selling included Pro", async () => {
+    mocks.purchases.mockResolvedValue([{ status: "created", tier: "all_access", razorpay_order_id: "order_bundle" }]);
+    mocks.fetch.mockResolvedValue({ id: "order_bundle", status: "paid", amount: 39900, currency: "INR", notes: { user_id: "user-1", tier: "all_access" } });
+    expect(await (await POST(request())).json()).toEqual({ recovery: true, orderId: "order_bundle" });
+    expect(mocks.grant).toHaveBeenCalledWith("order_bundle", "pay_captured", "user-1", "all_access", "customer@example.test");
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
   it("returns a recoverable error without provider internals", async () => {
     mocks.rate.mockRejectedValue(new Error("private database details"));
     const response = await POST(request());
