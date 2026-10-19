@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>in.dhansetu.api</string>
+  <key>ProgramArguments</key>
+  <array><string>/Users/apple/shakthi-os/scripts/dhansetu-api.sh</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/Users/apple/shakthi-os/logs/dhansetu-api.launchd.log</string>
+  <key>StandardErrorPath</key><string>/Users/apple/shakthi-os/logs/dhansetu-api.launchd.err.log</string>
+</dict>
+</plist>

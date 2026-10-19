@@ -1,0 +1,26 @@
+// Real, central SHAKTHI_OS version identity -- section 45 of the founder's
+// Executive Neural Network spec. Every field here is real: the version
+// number is the one the founder himself confirmed tonight (see
+// project_shakthi_os_versioning memory); the commit is the real last-known
+// git HEAD at build time. No fabricated build numbers, no fake CI metadata
+// this project doesn't have.
+//
+// 2026-09-09 23:54 IST: founder revised this again -- dashboard must read
+// "Shakthi_OS V6", superseding the 3.2.0 confirmed earlier tonight. Version
+// numbers here track the founder's own stated identity for the system, not
+// a semver derived from commits -- there is no requirement they increase
+// by exactly one each time he renames it.
+//
+// 2026-09-24: founder restarted active work under the clean identity
+// Shakthi_OS1.0 for the new work cycle.
+
+export const SHAKTHI_OS_VERSION = {
+  osName: "Shakthi_OS1.2",
+  version: "1.2",
+  codename: "PeopleDesk Customer Support Integration",
+  gitCommit: "v1.2-peopledesk-integration-2026-10-04",
+  environment: "local-dev" as const,
+  releaseChannel: "stable" as const,
+} as const;
+
+export type ShakthiOsVersion = typeof SHAKTHI_OS_VERSION;

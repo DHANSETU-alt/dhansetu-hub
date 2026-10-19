@@ -1,0 +1,299 @@
+{
+  "timestamp": "2026-10-01T12:52:52.197908",
+  "overall_status": "BLOCKED",
+  "total_gates_run": 24,
+  "gates_passed": 12,
+  "gates_failed": 12,
+  "gate_summaries": {
+    "Security Gates": {
+      "status": "FAIL",
+      "passed": 2,
+      "total": 6
+    },
+    "Performance Gates": {
+      "status": "FAIL",
+      "passed": 4,
+      "total": 5
+    },
+    "Error Handling Gates": {
+      "status": "FAIL",
+      "passed": 2,
+      "total": 4
+    },
+    "Test Coverage Gates": {
+      "status": "FAIL",
+      "passed": 1,
+      "total": 4
+    },
+    "Documentation Gates": {
+      "status": "FAIL",
+      "passed": 3,
+      "total": 5
+    }
+  },
+  "blockers": [
+    "Security Gates",
+    "Performance Gates",
+    "Error Handling Gates",
+    "Test Coverage Gates",
+    "Documentation Gates"
+  ],
+  "detailed_results": {
+    "Security Gates": {
+      "total_gates": 6,
+      "passed": 2,
+      "failed": 4,
+      "status": "FAIL",
+      "results": [
+        {
+          "name": "No Hardcoded Secrets",
+          "status": "FAIL",
+          "findings": [
+            "Found potential hardcoded secrets: tests/test_correction_bot.py:43, tests/test_correction_bot.py:89, tests/test_chrome_developer.py:33, tests/test_razorpay_checkout_flow.py:39, tests/test_razorpay_checkout_flow.py:53"
+          ],
+          "details": ""
+        },
+        {
+          "name": "SQL Injection Prevention",
+          "status": "FAIL",
+          "findings": [
+            "Found potential SQL injection vulnerabilities: orchestrator/security_gates.py:123, orchestrator/db.py:1287, orchestrator/sync_bridge.py:113, linux_backup_before_wipe_20260913/ShakthiOS_v3.2/shakthi_kernel/store.py:220, linux_backup_before_wipe_20260913/ShakthiOS_v3.2/orchestrator/db.py:1088"
+          ],
+          "details": ""
+        },
+        {
+          "name": "XSS Prevention",
+          "status": "PASS",
+          "findings": [],
+          "details": "JSON responses provide automatic HTML escaping"
+        },
+        {
+          "name": "CSRF Protection",
+          "status": "PASS",
+          "findings": [],
+          "details": "Request authentication via token is implemented"
+        },
+        {
+          "name": "Rate Limiting on Auth Endpoints",
+          "status": "FAIL",
+          "findings": [
+            "Rate limiting on auth endpoints not detected - CRITICAL"
+          ],
+          "details": ""
+        },
+        {
+          "name": "Password Hashing",
+          "status": "FAIL",
+          "findings": [
+            "Password hashing implementation not verified"
+          ],
+          "details": ""
+        }
+      ]
+    },
+    "Performance Gates": {
+      "total_gates": 5,
+      "passed": 4,
+      "failed": 1,
+      "status": "FAIL",
+      "results": [
+        {
+          "name": "Dashboard Load Time <1s",
+          "status": "PASS",
+          "findings": [],
+          "metrics": {
+            "init_time_seconds": 0.050132036209106445
+          },
+          "details": "Dashboard initialization completes in 0.050s"
+        },
+        {
+          "name": "API Response Time <200ms",
+          "status": "PASS",
+          "findings": [],
+          "metrics": {
+            "endpoints": 79,
+            "target_response_time_ms": 200
+          },
+          "details": "API has 79 endpoints implemented"
+        },
+        {
+          "name": "Database Query Time <100ms",
+          "status": "PASS",
+          "findings": [],
+          "metrics": {
+            "has_indexing": true,
+            "has_connection_pooling": true
+          },
+          "details": "Database optimizations (indexing/connection pooling) detected"
+        },
+        {
+          "name": "Memory Usage <1GB",
+          "status": "PASS",
+          "findings": [],
+          "metrics": {
+            "memory_mb": 41.0625,
+            "memory_gb": 0.04010009765625
+          },
+          "details": "Current process memory usage: 41.1MB"
+        },
+        {
+          "name": "No Memory Leaks",
+          "status": "FAIL",
+          "findings": [
+            "Potential memory leak indicators found: orchestrator/worker_pool.py:158, orchestrator/kaixen.py:69, orchestrator/voice.py:293"
+          ],
+          "metrics": {},
+          "details": ""
+        }
+      ]
+    },
+    "Error Handling Gates": {
+      "total_gates": 4,
+      "passed": 2,
+      "failed": 2,
+      "status": "FAIL",
+      "results": [
+        {
+          "name": "All Endpoints Have Error Handlers",
+          "status": "FAIL",
+          "findings": [
+            "Found 68 endpoints without error handlers: /api/personal/goals (personal_goals), /api/personal/tasks (personal_tasks), /api/personal/reminders/due (personal_due_reminders)"
+          ],
+          "metrics": {
+            "total_endpoints": 79,
+            "with_handlers": 11,
+            "without_handlers": 68
+          },
+          "details": ""
+        },
+        {
+          "name": "Generic Error Messages",
+          "status": "FAIL",
+          "findings": [
+            "Found potential stack trace exposure: Line 572: return {\"error\": str(e)}"
+          ],
+          "metrics": {
+            "potential_leaks": 5
+          },
+          "details": ""
+        },
+        {
+          "name": "Error Logging Coverage",
+          "status": "PASS",
+          "findings": [],
+          "metrics": {},
+          "details": "Error logging is configured for critical paths"
+        },
+        {
+          "name": "Retry Logic on Transient Failures",
+          "status": "PASS",
+          "findings": [],
+          "metrics": {},
+          "details": "Retry logic and transient error handling detected"
+        }
+      ]
+    },
+    "Test Coverage Gates": {
+      "total_gates": 4,
+      "passed": 1,
+      "failed": 3,
+      "status": "FAIL",
+      "results": [
+        {
+          "name": "Minimum 70% Code Coverage",
+          "status": "FAIL",
+          "findings": [
+            "Estimated coverage 54% below minimum"
+          ],
+          "metrics": {
+            "test_files": 51,
+            "code_files": 95,
+            "estimated_coverage": 53.68421052631579
+          },
+          "details": ""
+        },
+        {
+          "name": "Critical Paths Tested",
+          "status": "FAIL",
+          "findings": [
+            "Only 2 critical paths have tests"
+          ],
+          "metrics": {
+            "critical_tests": [
+              "test_codebase_audit_security",
+              "test_payment_route_security"
+            ],
+            "count": 2
+          },
+          "details": ""
+        },
+        {
+          "name": "Integration Tests Passing",
+          "status": "PASS",
+          "findings": [],
+          "metrics": {
+            "integration_tests": [
+              "test_routing_ceo_fix.py",
+              "test_payments.py",
+              "test_smartbudget_integration.py",
+              "test_ui_review_engine.py",
+              "test_payment_certification.py"
+            ]
+          },
+          "details": "Integration tests found: 5"
+        },
+        {
+          "name": "Unit Tests Passing",
+          "status": "FAIL",
+          "findings": [
+            "Could not run unit tests: [Errno 2] No such file or directory: 'python'"
+          ],
+          "metrics": {},
+          "details": ""
+        }
+      ]
+    },
+    "Documentation Gates": {
+      "total_gates": 5,
+      "passed": 3,
+      "failed": 2,
+      "status": "FAIL",
+      "results": [
+        {
+          "name": "README.md Complete",
+          "status": "FAIL",
+          "findings": [
+            "README.md missing sections: Installation, Usage, Features"
+          ],
+          "details": ""
+        },
+        {
+          "name": "API Documentation Complete",
+          "status": "PASS",
+          "findings": [],
+          "details": "API documented via code docstrings"
+        },
+        {
+          "name": "Database Schema Documented",
+          "status": "PASS",
+          "findings": [],
+          "details": "Database schema documented in code"
+        },
+        {
+          "name": "Deployment Procedure Documented",
+          "status": "PASS",
+          "findings": [],
+          "details": "Deployment documented at DEPLOYMENT_CHECKLIST.md"
+        },
+        {
+          "name": "Troubleshooting Guide Exists",
+          "status": "FAIL",
+          "findings": [
+            "No dedicated troubleshooting guide found"
+          ],
+          "details": ""
+        }
+      ]
+    }
+  }
+}

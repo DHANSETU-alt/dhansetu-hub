@@ -1,0 +1,403 @@
+diff --git a/agents/pa_angella.yaml b/agents/pa_angella.yaml
+old mode 100644
+new mode 100755
+index 8322fac..ff3167e
+--- a/agents/pa_angella.yaml
++++ b/agents/pa_angella.yaml
+@@ -21,6 +21,21 @@ role_prompt: |
+   Output the refined prompt only -- no commentary, no "here's your
+   prompt:" preamble.
+ 
++  Operating mode: act as the Founder-facing delivery partner for SHAKTHI_OS
++  3.2, with the discipline of a Codex systems engineer. When the prompt
++  includes a dashboard snapshot, use only that snapshot as current evidence.
++  Identify unfinished work, rank it by urgency and dependency, and turn each
++  item into a concrete next action with an owner and a verification step.
++  If a task is partially complete, state its recorded progress and the exact
++  work needed to reach done; never claim progress that is not in the snapshot.
++  Keep a short "FOUNDER ACTION REQUIRED" section for authentication,
++  credentials, device permissions, provider setup, or any other step that
++  only the Founder can perform. Push firmly and clearly, but never ask the
++  Founder to paste secrets, bypass authentication, or weaken a control.
++  Mark external integrations and unverified claims as EXTERNAL VERIFICATION
++  REQUIRED. If no current dashboard snapshot is supplied, say that a live
++  review is unavailable and ask for the specific evidence needed.
++
+   Never invent a specific figure (a number, a name, a date) the founder
+   didn't give you. If their message doesn't include the data needed, say
+   so plainly as an open question in the refined prompt instead of guessing.
+diff --git a/dashboard/app/api/blackboxops/chat/route.ts b/dashboard/app/api/blackboxops/chat/route.ts
+old mode 100644
+new mode 100755
+index 3e921d3..cae0363
+--- a/dashboard/app/api/blackboxops/chat/route.ts
++++ b/dashboard/app/api/blackboxops/chat/route.ts
+@@ -20,6 +20,23 @@ async function backendIsUp(): Promise<boolean> {
+   }
+ }
+ 
++async function dashboardSnapshot(): Promise<string> {
++  try {
++    const [tasksRes, initiativesRes] = await Promise.all([
++      fetch(`${API_BASE}/api/tasks`, { cache: "no-store", signal: AbortSignal.timeout(3000) }),
++      fetch(`${API_BASE}/api/initiatives`, { cache: "no-store", signal: AbortSignal.timeout(3000) }),
++    ]);
++    if (!tasksRes.ok || !initiativesRes.ok) return "DASHBOARD SNAPSHOT: unavailable";
++    const tasks = await tasksRes.json();
++    const initiatives = await initiativesRes.json();
++    const incompleteTasks = (tasks.tasks || []).filter((t: any) => !["completed", "done", "cancelled"].includes(String(t.status).toLowerCase())).slice(0, 20);
++    const incompleteInitiatives = (initiatives.initiatives || []).filter((i: any) => !["completed", "done", "cancelled"].includes(String(i.status).toLowerCase())).slice(0, 12);
++    return `DASHBOARD SNAPSHOT (read-only, collected now):\nTASKS: ${JSON.stringify(incompleteTasks)}\nINITIATIVES: ${JSON.stringify(incompleteInitiatives)}\nCOUNTS: ${JSON.stringify(tasks.counts || {})}`;
++  } catch {
++    return "DASHBOARD SNAPSHOT: unavailable";
++  }
++}
++
+ export async function GET() {
+   return NextResponse.json({ up: await backendIsUp() });
+ }
+@@ -38,8 +55,10 @@ export async function POST(req: NextRequest) {
+     // under load (this machine has hit real Ollama contention before),
+     // so real headroom, not a snappy-feeling short timeout that just
+     // fails under normal load.
++    const snapshot = await dashboardSnapshot();
++    const guidedMessage = `${snapshot}\n\nFOUNDER MESSAGE:\n${message}\n\nReview the snapshot first. Respond as Angella, the SHAKTHI_OS delivery partner: give the highest-priority unfinished item, a finish plan, blockers, and a clearly labeled FOUNDER ACTION REQUIRED list. Preserve the founder's intent.`;
+     const { stdout } = await execFileAsync(
+-      "python3", ["-m", "orchestrator.cli", "--chat-message", message, "--chat-agent", "sales"],
++      "python3", ["-m", "orchestrator.cli", "--chat-message", guidedMessage, "--chat-agent", "pa_angella"],
+       { cwd: PROJECT_ROOT, timeout: 110_000 }
+     );
+     const parsed = JSON.parse(stdout.trim().split("\n").pop() || "{}");
+diff --git a/dashboard/app/globals.css b/dashboard/app/globals.css
+old mode 100644
+new mode 100755
+index de7188c..c8792e7
+--- a/dashboard/app/globals.css
++++ b/dashboard/app/globals.css
+@@ -127,6 +127,8 @@ body::before {
+     radial-gradient(640px circle at 92% 78%, color-mix(in srgb, #22d3ee 4%, transparent), transparent 60%);
+ }
+ 
++.concept3-shell{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;overflow:hidden;background:rgba(0,2,2,.78);color:#dbe5e2}.concept3-title{height:72px;flex:none;text-align:center;padding-top:14px;border-bottom:1px solid rgba(44,255,143,.12);background:linear-gradient(180deg,rgba(0,0,0,.9),rgba(0,5,4,.72))}.concept3-title h1{font-size:clamp(15px,1.45vw,27px);letter-spacing:.13em;font-weight:400;color:#d6d9d8}.concept3-title p{margin-top:4px;font-size:10px;letter-spacing:.13em;color:#89918f}.concept3-workspace{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 14px}.concept3-half{min-width:0;min-height:0;display:grid;grid-template-columns:174px minmax(0,1fr);border:1px solid rgba(114,255,184,.22);border-radius:14px 14px 0 0;overflow:hidden;background:rgba(1,5,5,.86);box-shadow:0 0 35px rgba(0,255,135,.035),inset 0 0 50px rgba(0,0,0,.7)}.concept3-stage{position:relative;min-width:0;min-height:0;overflow:hidden}.concept-nav{display:flex;flex-direction:column;min-height:0;border-right:1px solid rgba(255,255,255,.08);background:rgba(1,5,5,.9);font-size:10px}.concept-brand{height:48px;padding:15px 13px;border-bottom:1px solid rgba(255,255,255,.08);font-size:11px;font-weight:700;letter-spacing:.04em}.concept-brand>span{color:#35f18b;font-size:20px;vertical-align:-2px;margin-right:5px;text-shadow:0 0 10px #35f18b}.concept-founder{display:flex;gap:9px;align-items:center;padding:12px;border-bottom:1px solid rgba(255,255,255,.06)}.concept-founder>i{display:grid;place-items:center;width:30px;height:30px;flex:none;border-radius:50%;border:1px solid rgba(52,211,153,.4);background:#15201d;color:#6ee7b7;font-style:normal}.concept-founder b{display:block;font-size:8px;letter-spacing:.05em}.concept-founder small{display:block;color:#77817e;line-height:1.45}.concept-founder em,.concept-health em,.hardware-title i{display:inline-block;width:5px;height:5px;border-radius:50%;background:#24e476;box-shadow:0 0 7px #24e476}.concept-nav nav{overflow:auto;padding:4px 8px;scrollbar-width:none}.concept-nav nav h3{margin:10px 4px 4px;font-size:7px;letter-spacing:.16em;color:#56605d}.concept-nav nav a{display:flex;gap:7px;align-items:center;padding:6px 7px;border-radius:4px;color:#858e8b}.concept-nav nav a span{color:#5c6763}.concept-nav nav a:hover,.concept-nav nav a.selected{color:#d8e2df;background:rgba(29,51,44,.54);box-shadow:inset 2px 0 #2fe486}.concept-health{margin-top:auto;padding:10px 12px;border-top:1px solid rgba(255,255,255,.06)}.concept-health span{display:block;color:#64706c}.concept-health b{display:block;margin-top:4px;color:#40de83;font-size:9px;font-weight:500}.concept-hardware{height:112px;flex:none;margin:0 14px 8px;padding:8px 12px;border:1px solid rgba(114,255,184,.22);border-top-color:rgba(34,211,238,.2);border-radius:0 0 12px 12px;background:rgba(1,7,6,.94)}.hardware-title{height:21px;color:#42d785;font:9px var(--font-geist-mono),monospace;letter-spacing:.12em}.hardware-title b{font-size:8px;font-weight:500;color:#24e476}.hardware-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px}.hardware-metric{min-width:0;height:70px;padding:8px 10px;border:1px solid rgba(255,255,255,.07);border-radius:7px;background:rgba(5,13,12,.8)}.hardware-metric span{display:block;color:#68736f;font-size:8px;letter-spacing:.1em}.hardware-metric strong{display:block;margin:3px 0;color:#3de47f;font:18px var(--font-geist-mono),monospace}.hardware-metric strong.warn{color:#fbbf24}.hardware-metric small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#77827e;font-size:8px}@media(max-width:1250px){.concept3-half{grid-template-columns:138px minmax(0,1fr)}.concept-nav{font-size:9px}.concept3-workspace{gap:7px;padding-inline:7px}.concept-hardware{margin-inline:7px}}@media(max-width:900px){.concept3-shell{position:relative;min-height:100vh;overflow:visible}.concept3-workspace{display:block}.concept3-half{height:760px;margin-bottom:10px;grid-template-columns:132px minmax(0,1fr)}.concept-hardware{height:auto}.hardware-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.concept3-title h1{font-size:13px}}
++
+ .glass {
+   background: var(--glass-bg);
+   border: 1px solid var(--glass-border);
+@@ -191,4 +193,16 @@ body::before {
+   html {
+     @apply font-sans;
+   }
+-}
+\ No newline at end of file
++}
++
++/* Working board: medium text and readable operational metadata. */
++@theme { --text-xs: 0.875rem; --text-sm: 1rem; }
++body { font-size: 16px; line-height: 1.55; }
++.dark { --muted-foreground: #a7b7ae; --border: rgba(180,215,195,.16); }
++[class~="text-[10px]"], [class~="text-[11px]"], [class~="text-[9px]"] { font-size: 13px; line-height: 1.5; }
++nav a { min-height: 44px; }
++:focus-visible { outline: 2px solid #6ce3ad; outline-offset: 3px; }
++.work-shortcuts { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; }
++.work-shortcuts a { display:block; padding:18px; border:1px solid var(--border); border-radius:12px; background:var(--surface); }
++.work-shortcuts a:hover { border-color:var(--good); background:var(--surface-2); }
++.work-shortcuts small { display:block; color:var(--muted-foreground); margin-top:6px; font-size:14px; }
+diff --git a/dashboard/app/page.tsx b/dashboard/app/page.tsx
+old mode 100644
+new mode 100755
+index 876967a..f1e055d
+--- a/dashboard/app/page.tsx
++++ b/dashboard/app/page.tsx
+@@ -1,4 +1,4 @@
+-import { getOverview, getGovernorStatus, getCeoHealth, getIncidents, getWorkers, getPaymentLinks, getSecurityLatest, getInitiatives } from "@/lib/api";
++import { getOverview, getGovernorStatus, getCeoHealth, getIncidents, getWorkers, getPaymentLinks, getSecurityLatest, getInitiatives, getLinuxRuntime } from "@/lib/api";
+ import { Card, CardHeader, CardBody, StatTile, Badge, EmptyState } from "@/components/ui";
+ import { AutoRefresh } from "@/components/AutoRefresh";
+ import Link from "next/link";
+@@ -23,27 +23,77 @@ export default async function ExecutiveDashboard() {
+   const ollama = overview.cost_summary.find((c) => c.provider === "ollama");
+   const claude = overview.cost_summary.find((c) => c.provider === "claude");
+ 
+-  const [governor, ceoHealth, incidentsResult, workersResult, paymentsResult, securityResult, initiativesResult] = await Promise.all([
++  const [governor, ceoHealth, incidentsResult, workersResult, paymentsResult, securityResult, initiativesResult, linuxRuntime] = await Promise.all([
+     getGovernorStatus().catch(() => null),
+     getCeoHealth().catch(() => null),
+     getIncidents().catch(() => null),
+     getWorkers(20).catch(() => null),
+     getPaymentLinks(20).catch(() => null),
+     getSecurityLatest().catch(() => null),
+-    getInitiatives("running").catch(() => null),
++    // The Founder dashboard is the task ledger of record. Do not hide
++    // completed or paused initiatives here: that made the Linux migration
++    // look as if imported Mac tasks were missing even though they remained
++    // present in the API and database.
++    getInitiatives().catch(() => null),
++    getLinuxRuntime().catch(() => null),
+   ]);
+-  const runningInitiatives = initiativesResult?.initiatives ?? [];
++  const allInitiatives = initiativesResult?.initiatives ?? [];
++  const revenueMission = allInitiatives.find((initiative) => initiative.title.includes("Revenue Mission Engine"));
++  const initiativeLabel = (track: string, seq: number) =>
++    `${track === "os" ? "OS" : track === "project" ? "Project" : "Task"} ${seq}`;
+ 
+   return (
+     <div className="space-y-6">
+-      <div className="flex items-center justify-between">
++      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+         <div>
+-          <h1 className="text-xl font-semibold">Executive Dashboard</h1>
+-          <p className="text-sm text-[var(--muted-foreground)] mt-1">Founder-level overview across every business, agent, and system built this session.</p>
++          <div className="mb-2 flex flex-wrap gap-2"><Badge tone="local">Linux control center</Badge><Badge tone={linuxRuntime ? "good" : "bad"}>{linuxRuntime ? "Runtime connected" : "Runtime unavailable"}</Badge></div>
++          <h1 className="text-2xl font-semibold tracking-tight">SHAKTHI_OS 3.2 Working Board</h1>
++          <p className="text-sm text-[var(--muted-foreground)] mt-1">Founder-level view of data stored and services running on this Linux installation.</p>
+         </div>
+         <AutoRefresh intervalSeconds={15} />
+       </div>
+ 
++      <nav className="work-shortcuts" aria-label="Working areas">
++        <Link href="/initiatives"><strong>Founder tasks</strong><small>Review pending work and initiative status</small></Link>
++        <Link href="/tasks"><strong>Task pipeline</strong><small>Inspect execution records and results</small></Link>
++        <Link href="/command-center"><strong>Issue a command</strong><small>Submit work through the existing controls</small></Link>
++        <Link href="/connections"><strong>Connections</strong><small>Check local data and execution readiness</small></Link>
++      </nav>
++
++      <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
++        <Card>
++          <CardHeader title="Linux Runtime" subtitle={linuxRuntime ? `Live local sample · ${linuxRuntime.hostname} · API :${linuxRuntime.api_port}` : "No current Linux sample available"} action={<Badge tone={linuxRuntime ? "good" : "bad"}>{linuxRuntime ? "LIVE LOCAL" : "DISCONNECTED"}</Badge>} />
++          <CardBody>
++            {linuxRuntime ? (
++              <div className="space-y-4">
++                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
++                  <StatTile label="CPU" value={`${linuxRuntime.cpu_percent}%`} hint={`${linuxRuntime.logical_cpus ?? "—"} logical CPUs`} tone={linuxRuntime.cpu_percent > 90 ? "bad" : linuxRuntime.cpu_percent > 75 ? "warn" : "good"} />
++                  <StatTile label="RAM" value={`${linuxRuntime.ram_percent}%`} hint={`${(linuxRuntime.ram_total_bytes / 1073741824).toFixed(1)} GiB total`} tone={linuxRuntime.ram_percent > 90 ? "bad" : linuxRuntime.ram_percent > 80 ? "warn" : "good"} />
++                  <StatTile label="Disk" value={`${linuxRuntime.disk_percent}%`} hint={`${(linuxRuntime.disk_free_bytes / 1073741824).toFixed(0)} GiB free`} tone={linuxRuntime.disk_percent > 90 ? "bad" : linuxRuntime.disk_percent > 80 ? "warn" : "good"} />
++                  <StatTile label="Battery" value={linuxRuntime.battery_percent === null ? "N/A" : `${linuxRuntime.battery_percent}%`} hint={linuxRuntime.battery_plugged === null ? "Not detected" : linuxRuntime.battery_plugged ? "AC connected" : "On battery"} tone={linuxRuntime.battery_plugged === false ? "warn" : "good"} />
++                </div>
++                <div className="grid gap-2 text-xs text-[var(--muted-foreground)] sm:grid-cols-2">
++                  <div className="rounded-md border border-[var(--border)] bg-black/20 p-3"><span className="block text-[10px] uppercase tracking-wider">Host</span><span className="text-[var(--ink)]">{linuxRuntime.os} {linuxRuntime.kernel} · {linuxRuntime.architecture}</span></div>
++                  <div className="rounded-md border border-[var(--border)] bg-black/20 p-3"><span className="block text-[10px] uppercase tracking-wider">Processor</span><span className="text-[var(--ink)]">{linuxRuntime.cpu_name}</span></div>
++                  <div className="rounded-md border border-[var(--border)] bg-black/20 p-3 sm:col-span-2"><span className="block text-[10px] uppercase tracking-wider">NVIDIA GPU</span><span className={linuxRuntime.gpu.state === "CONNECTED" ? "text-[var(--good)]" : "text-[var(--warn)]"}>{linuxRuntime.gpu.state === "CONNECTED" ? linuxRuntime.gpu.name : `${linuxRuntime.gpu.state} — ${linuxRuntime.gpu.reason}`}</span></div>
++                </div>
++              </div>
++            ) : <EmptyState>Linux runtime API did not return a sample. Stored business data below may still be available.</EmptyState>}
++          </CardBody>
++        </Card>
++        <Card>
++          <CardHeader title="Revenue Mission" subtitle="Execution progress, not planning completion" action={<Badge tone={revenueMission?.status === "running" ? "good" : "neutral"}>{revenueMission?.status ?? "unavailable"}</Badge>} />
++          <CardBody>
++            {revenueMission ? <>
++              <div className="flex items-end justify-between"><span className="text-4xl font-semibold font-mono-num">{revenueMission.percent_complete}%</span><span className="text-xs text-[var(--muted-foreground)]">{revenueMission.milestone_done}/{revenueMission.milestone_total} milestones</span></div>
++              <div className="mt-4 h-2 overflow-hidden rounded-full bg-[var(--surface-2)]"><div className="h-full rounded-full bg-[var(--local)]" style={{ width: `${revenueMission.percent_complete}%` }} /></div>
++              <div className="mt-4 grid grid-cols-2 gap-2 text-xs"><div className="rounded-md border border-[var(--border)] p-3"><span className="block text-[var(--muted-foreground)]">Verified revenue</span><b className="mt-1 block text-lg">₹0</b></div><div className="rounded-md border border-[var(--border)] p-3"><span className="block text-[var(--muted-foreground)]">Next gate</span><b className="mt-1 block">Send 5 messages</b></div></div>
++              <Link href="/initiatives" className="mt-4 inline-block text-xs text-[var(--local)] hover:underline">Open mission milestones →</Link>
++            </> : <EmptyState>Revenue Mission initiative is unavailable.</EmptyState>}
++          </CardBody>
++        </Card>
++      </div>
++
+       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+         <StatTile label="Businesses" value={String(overview.businesses.length)} />
+         <StatTile label="Registered Agents" value={String(overview.agent_count)} />
+@@ -56,7 +106,7 @@ export default async function ExecutiveDashboard() {
+       </div>
+ 
+       <Card>
+-        <CardHeader title="System Status" subtitle="Live, across every subsystem — not just the original task ledger above" />
++        <CardHeader title="Subsystem Status" subtitle="Live responses where connected; unavailable or stored signals remain explicitly marked" />
+         <CardBody>
+           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+             <Link href="/mission-control" className="block">
+@@ -72,10 +122,10 @@ export default async function ExecutiveDashboard() {
+               <StatTile label="Worker Queue" value={workersResult ? String(workersResult.load_balancer.queue_depth) : "—"} tone={workersResult?.load_balancer.overflowing ? "bad" : "good"} />
+             </Link>
+             <Link href="/payments" className="block">
+-              <StatTile label="Payments Collected" value={paymentsResult ? `₹${paymentsResult.total_paid_inr.toLocaleString("en-IN")}` : "—"} tone="good" />
++              <StatTile label="Payments Collected" value={paymentsResult ? `₹${paymentsResult.total_paid_inr.toLocaleString("en-IN")}` : "—"} tone={paymentsResult?.total_paid_inr ? "good" : "neutral"} hint={paymentsResult ? "Verified stored records" : "Payment API unavailable"} />
+             </Link>
+             <Link href="/security" className="block">
+-              <StatTile label="Security Score" value={securityResult?.latest_report ? `${securityResult.latest_report.score}/100` : "—"}
++              <StatTile label="Security Score" value={securityResult?.latest_report ? `${securityResult.latest_report.score}/100` : "—"} hint={securityResult?.latest_report ? `Stored scan: ${securityResult.latest_report.created_at}` : "No stored scan"}
+                          tone={securityResult?.latest_report ? (securityResult.latest_report.score >= 70 ? "good" : "bad") : "neutral"} />
+             </Link>
+           </div>
+@@ -84,8 +134,8 @@ export default async function ExecutiveDashboard() {
+ 
+       <Card>
+         <CardHeader
+-          title="Founder Tasks — running now"
+-          subtitle="Task 1, Task 2, ... — real % complete from real milestones"
++          title="Founder Tasks, Projects &amp; OS — complete ledger"
++          subtitle={`${allInitiatives.length} imported and Linux-native initiatives — real progress from stored milestones`}
+           action={
+             <Link href="/initiatives" className="text-xs font-mono text-[var(--local)] hover:underline">
+               View all →
+@@ -93,18 +143,23 @@ export default async function ExecutiveDashboard() {
+           }
+         />
+         <CardBody>
+-          {runningInitiatives.length === 0 ? (
+-            <EmptyState>No task currently running.</EmptyState>
++          {allInitiatives.length === 0 ? (
++            <EmptyState>No initiatives recorded.</EmptyState>
+           ) : (
+             <div className="space-y-3">
+-              {runningInitiatives.map((init) => (
++              {allInitiatives.map((init) => (
+                 <Link key={init.id} href="/initiatives" className="block">
+-                  <div className="flex items-center justify-between text-sm mb-1">
+-                    <span className="text-[var(--ink)]">
+-                      Task {init.seq} — {init.title}
++                  <div className="flex flex-col gap-1 text-sm mb-1 sm:flex-row sm:items-center sm:justify-between">
++                    <span className="text-[var(--ink)] min-w-0">
++                      {initiativeLabel(init.track, init.seq)} — {init.title}
+                     </span>
+-                    <span className="font-mono-num text-[var(--muted-foreground)]">
+-                      {init.percent_complete}% ({init.milestone_done}/{init.milestone_total})
++                    <span className="flex items-center gap-2 shrink-0">
++                      <Badge tone={init.status === "running" ? "good" : init.status === "paused" ? "warn" : "neutral"}>
++                        {init.status}
++                      </Badge>
++                      <span className="font-mono-num text-[var(--muted-foreground)]">
++                        {init.percent_complete}% ({init.milestone_done}/{init.milestone_total})
++                      </span>
+                     </span>
+                   </div>
+                   <div className="h-1.5 rounded-full bg-[var(--surface-2)] overflow-hidden">
+@@ -121,12 +176,12 @@ export default async function ExecutiveDashboard() {
+       </Card>
+ 
+       <Card>
+-        <CardHeader title="Recent Tasks" subtitle="Most recent 15 tasks across all businesses" />
++        <CardHeader title="Recent Task Records" subtitle="Most recent 15 stored records; timestamps show freshness" />
+         <CardBody className="p-0">
+           {overview.recent_tasks.length === 0 ? (
+             <EmptyState>No tasks yet. Run one from the CLI to see it here.</EmptyState>
+           ) : (
+-            <table className="w-full text-sm">
++            <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm">
+               <thead>
+                 <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--muted-foreground)] border-b border-[var(--border)]">
+                   <th className="px-5 py-2 font-medium">ID</th>
+@@ -153,7 +208,7 @@ export default async function ExecutiveDashboard() {
+                   </tr>
+                 ))}
+               </tbody>
+-            </table>
++            </table></div>
+           )}
+         </CardBody>
+       </Card>
+diff --git a/dashboard/components/BlackboxChatWidget.tsx b/dashboard/components/BlackboxChatWidget.tsx
+old mode 100644
+new mode 100755
+index eb2d863..41620c2
+--- a/dashboard/components/BlackboxChatWidget.tsx
++++ b/dashboard/components/BlackboxChatWidget.tsx
+@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
+ 
+ type Msg = { role: "user" | "bot"; text: string };
+ 
+-// Real chat widget wired to the actual Sales agent (routing.run_task via
++// Real chat widget wired to PA Angella (routing.run_task via
+ // --chat-message) -- not a scripted FAQ bot. Honestly reflects backend
+ // state: if the orchestrator API isn't reachable, it shows asleep rather
+ // than pretending to be available (founder's own explicit requirement).
+@@ -74,7 +74,7 @@ export function BlackboxChatWidget() {
+                 style={{ background: up ? "#4ade80" : "#5b6472", boxShadow: up ? "0 0 6px #4ade80" : "none" }}
+               />
+               <span className="text-sm font-medium" style={{ color: "#e8ecf1" }}>
+-                {up === null ? "Checking…" : up ? "blackboxOps_OS · Sales" : "Asleep — system offline"}
++                {up === null ? "Checking…" : up ? "SHAKTHI_OS 3.2 · Angella" : "Asleep — system offline"}
+               </span>
+             </div>
+             <button onClick={() => setOpen(false)} className="text-xs" style={{ color: "#8b95a6" }}>close</button>
+@@ -84,7 +84,7 @@ export function BlackboxChatWidget() {
+             {messages.length === 0 && (
+               <p className="text-xs" style={{ color: "#5b6472" }}>
+                 {up
+-                  ? "Ask about pricing, what's included, or how checkout works — a real Sales agent answers, grounded only in what's actually built. It won't invent pricing or promises."
++                  ? "Ask Angella for a live dashboard review. She will rank unfinished work, plan the next steps, and call out authentication or manual actions that require you."
+                   : "The system's asleep right now, so I can't answer live. Email support@dhansetuhub.in instead."}
+               </p>
+             )}
+diff --git a/dashboard/components/ChatGptSitesCountdown.tsx b/dashboard/components/ChatGptSitesCountdown.tsx
+old mode 100644
+new mode 100755
+index 6adbfeb..41d8fa5
+--- a/dashboard/components/ChatGptSitesCountdown.tsx
++++ b/dashboard/components/ChatGptSitesCountdown.tsx
+@@ -1,50 +1,3 @@
+-"use client";
+-
+-// Real observed value, not a computed/fetched one -- ChatGPT Sites exposes no
+-// public API for its own usage-limit reset time. Read directly from the
+-// "Work usage" panel at chatgpt.com/sites (gear icon -> Usage) on 2026-08-30
+-// 16:17 IST, which showed "5-hour limit: resets in 1h 3m, 0% left". Update
+-// this constant by re-checking that panel if it goes stale.
+-const RESET_AT = "2026-08-30T11:51:00Z";
+-
+-function formatRemaining(ms: number): string {
+-  if (ms <= 0) return "Ready now";
+-  const totalSeconds = Math.floor(ms / 1000);
+-  const h = Math.floor(totalSeconds / 3600);
+-  const m = Math.floor((totalSeconds % 3600) / 60);
+-  const s = totalSeconds % 60;
+-  return `${h}h ${String(m).padStart(2, "0")}m ${String(s).padStart(2, "0")}s`;
+-}
+-
+-import { useEffect, useState } from "react";
+-
+ export function ChatGptSitesCountdown() {
+-  const [remainingMs, setRemainingMs] = useState<number | null>(null);
+-
+-  useEffect(() => {
+-    const target = new Date(RESET_AT).getTime();
+-    const tick = () => setRemainingMs(target - Date.now());
+-    tick();
+-    const id = setInterval(tick, 1000);
+-    return () => clearInterval(id);
+-  }, []);
+-
+-  if (remainingMs === null) return null;
+-  const ready = remainingMs <= 0;
+-
+-  return (
+-    <div
+-      className={`fixed top-0 left-0 right-0 z-50 flex items-center justify-between gap-3 px-4 py-2 text-sm border-b ${
+-        ready
+-          ? "bg-emerald-950/90 border-emerald-800 text-emerald-300"
+-          : "bg-amber-950/90 border-amber-900 text-amber-300"
+-      }`}
+-    >
+-      <span>
+-        ChatGPT Sites 5-hour usage limit —{" "}
+-        {ready ? "reset, safe to resume queued site edits" : "resets in"}
+-      </span>
+-      {!ready && <span className="font-mono tabular-nums">{formatRemaining(remainingMs)}</span>}
+-    </div>
+-  );
++  return <div className="fixed top-0 left-0 right-0 z-50 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm text-[var(--muted-foreground)]">SHAKTHI_OS 3.2 · Local workspace · External usage limits unverified</div>;
+ }
+diff --git a/dashboard/components/Sidebar.tsx b/dashboard/components/Sidebar.tsx
+old mode 100644
+new mode 100755
+index 2ea7e98..824deca
+--- a/dashboard/components/Sidebar.tsx
++++ b/dashboard/components/Sidebar.tsx
+@@ -16,6 +16,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
+       { href: "/command-center", label: "Founder Command Center" },
+       { href: "/initiatives", label: "Founder Tasks" },
+       { href: "/mission-control", label: "Mission Control" },
++      { href: "/connections", label: "Connections & readiness" },
+     ],
+   },
+   {
+@@ -72,7 +73,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
+ export function Sidebar({ angellaStatus }: { angellaStatus?: PaAngellaStatus | null }) {
+   const pathname = usePathname();
+   return (
+-    <nav className="glass w-60 shrink-0 border-r-0 h-screen sticky top-0 overflow-y-auto relative z-20">
++    <nav className="glass w-full shrink-0 border-r-0 max-h-44 overflow-y-auto relative z-20 md:w-60 md:h-screen md:max-h-none md:sticky md:top-0">
+       <div className="px-4 py-5 border-b border-[var(--border)]">
+         <div className="text-sm font-semibold tracking-tight">SHAKTHI AI OS</div>
+         <div className="text-[11px] text-[var(--muted-foreground)] mt-0.5">Founder Control Center</div>

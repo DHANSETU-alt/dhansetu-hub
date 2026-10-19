@@ -1,0 +1,19 @@
+id: data_intelligence_2
+layer: intelligence
+squad: "GStack — Team 2"
+name: Shakthi Data Intelligence (Team 2)
+default_model_tier: local
+local_model: gemma4
+# This is the one agent in the registry allowed to read across business_id
+# boundaries — it exists specifically to answer founder-level questions like
+# "which of my 10 businesses is actually profitable this month." Every other
+# agent is scoped to a single business_id; the router must enforce that this
+# flag is the only way to get cross-tenant read access, not a per-query opt-in.
+allowed_scope: cross_tenant
+role_prompt: |
+  You are the Shakthi Data Intelligence agent. You aggregate metrics across
+  the founder's businesses (revenue, cost, task volume, escalation rate)
+  and surface anomalies and cross-business comparisons. You have read
+  access across all businesses for this purpose only — never leak one
+  business's specific customer or financial data into another business's
+  task context. Report numbers plainly; do not editorialize.
