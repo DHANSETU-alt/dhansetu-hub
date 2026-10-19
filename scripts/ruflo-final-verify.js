@@ -5,8 +5,15 @@ const check = (url) => {
   try { return execFileSync("curl", ["-L", "-sS", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "20", url], { encoding: "utf8" }).trim(); }
   catch { return "000"; }
 };
-const origin = check("https://dhansetu-hub.onrender.com/api/health");
-const publicCode = check("https://dhansetuhub.in/api/health");
+let origin = "000";
+let publicCode = "000";
+for (let attempt = 1; attempt <= 10; attempt += 1) {
+  origin = check("https://dhansetu-hub.onrender.com/api/health");
+  publicCode = check("https://dhansetuhub.in/api/health");
+  console.log(`attempt=${attempt} origin=${origin} public=${publicCode}`);
+  if (origin === "200" && publicCode === "200") break;
+  if (attempt < 10) execFileSync("sleep", ["10"]);
+}
 const result = { checkedAt: new Date().toISOString(), origin, public: publicCode };
 if (origin === "200" && publicCode === "200") {
   writeFileSync("LAUNCH_SUCCESS.md", `# Launch success\n\n\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\`\n`);
