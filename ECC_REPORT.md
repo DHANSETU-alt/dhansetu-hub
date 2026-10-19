@@ -1,2 +1,1 @@
-typecheck=pass
-lint=pass
+typecheck=pass lint=pass
