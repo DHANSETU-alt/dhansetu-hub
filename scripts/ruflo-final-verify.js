@@ -12,7 +12,7 @@ if (origin === "200" && publicCode === "200") {
   writeFileSync("LAUNCH_SUCCESS.md", `# Launch success\n\n\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\`\n`);
   console.log(JSON.stringify(result));
 } else {
-  writeFileSync("NEXT_STEPS.md", `# Next steps\n\nLive gate failed: ${JSON.stringify(result)}\n\nRun after Render/Cloudflare manual repair:\n\n\`VERIFY_SECONDS=300 ./scripts/plan-b-fallback.sh\`\n`);
+  writeFileSync("NEXT_STEPS.md", `# Next steps\n\nLive gate failed: ${JSON.stringify(result)}\n\n1. Render Dashboard -> dhansetu-hub -> Settings -> Custom Domains -> add and verify dhansetuhub.in and www.dhansetuhub.in.\n2. Cloudflare DNS -> CNAME @ and www to dhansetu-hub.onrender.com, Proxied ON.\n3. Purge Cloudflare cache.\n4. Run: \`VERIFY_SECONDS=300 ./scripts/plan-b-fallback.sh\`\n`);
   console.error(JSON.stringify(result));
   process.exitCode = 1;
 }
