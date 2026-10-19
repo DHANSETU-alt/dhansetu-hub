@@ -1,0 +1,6 @@
+import Link from "next/link";
+import { PUBLIC_PLANS } from "@/lib/payment/tiers";
+
+export default function PricingPage() {
+  return <main className="service-page"><section className="service-shell"><nav className="service-nav"><Link className="service-brand" href="/">d<span>hansetu</span></Link><Link className="service-back" href="/tools">Explore tools</Link></nav><p className="service-kicker">Simple access</p><h1>Choose the workspace<br />that fits your next step.</h1><p className="service-lead">Start with browser-based tools, or unlock the money workspace with one verified Razorpay payment.</p><div className="service-grid">{Object.entries(PUBLIC_PLANS).map(([id, plan]) => <article className="service-card" key={id}><p className="service-kicker">{id === "free" ? "Start here" : "Lifetime access"}</p><h2 className="text-2xl">{plan.label}</h2><p className="mt-3 text-3xl font-bold">{plan.amountPaise === 0 ? "Free" : `₹${plan.amountPaise / 100}`}</p><p className="service-muted mt-3">{id === "free" ? "Idea validation, document tools, and SmartBudget in your browser." : "Server-verified checkout and entitlement for your account."}</p><Link className="service-button mt-5 inline-block" href={id === "free" ? "/tools" : `/checkout?tier=${id}`}>{id === "free" ? "Explore free tools" : "Continue securely"}</Link></article>)}</div></section></main>;
+}
