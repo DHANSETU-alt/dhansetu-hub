@@ -1,1 +1,8 @@
-[]
+[
+  {
+    "time": "2026-10-19T00:00:00.000Z",
+    "error": "Repository-wide typecheck/build fails in unrelated dashboard and backups trees because referenced modules are absent.",
+    "skill_tried": "ecc-guide",
+    "next_skill": "browser-qa"
+  }
+]
