@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json.schemastore.org/design-tokens.json",
+  "color": {
+    "brand": { "value": "#0f766e", "type": "color" },
+    "surface": { "value": "#f8fafc", "type": "color" },
+    "ink": { "value": "#0f172a", "type": "color" }
+  },
+  "radius": { "sm": { "value": "0.5rem", "type": "dimension" }, "lg": { "value": "1rem", "type": "dimension" } },
+  "space": { "sm": { "value": "0.5rem", "type": "dimension" }, "md": { "value": "1rem", "type": "dimension" }, "lg": { "value": "1.5rem", "type": "dimension" } }
+}

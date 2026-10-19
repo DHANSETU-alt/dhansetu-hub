@@ -23,8 +23,19 @@ function captureReferral(request: NextRequest, response: NextResponse) {
   });
 }
 
+function applySecurityHeaders(response: NextResponse) {
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  if (process.env.NODE_ENV === "production") {
+    response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+}
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
+  applySecurityHeaders(response);
   if (process.env.PAYMENT_FLOW_TEST_MODE === "1") {
     captureReferral(request, response);
     return response;
@@ -39,6 +50,7 @@ export async function middleware(request: NextRequest) {
       setAll(values) {
         values.forEach(({ name, value }) => request.cookies.set(name, value));
         response = NextResponse.next({ request });
+        applySecurityHeaders(response);
         values.forEach(({ name, value, options }) =>
           response.cookies.set(name, value, {
             ...options,
