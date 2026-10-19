@@ -1,24 +1,28 @@
+"use client";
+
 import Link from "next/link";
-import { PUBLIC_PLANS } from "@/lib/payment/tiers";
-import { WorkspaceScene } from "@/components/home/WorkspaceScene";
+import { ArrowRight, BookOpen, Download, Menu, Sparkles, Wand2, X } from "lucide-react";
+import { useState } from "react";
 import "./home.css";
 
-const tools = [
-  ["SmartBudget", "See where your money is really going.", "/smartbudget", "₹", "mint"],
-  ["Image to PDF", "Turn everyday documents into share-ready files.", "/tools/image-to-pdf", "▧", "blue"],
-  ["Invoice Studio", "Create a clean invoice in a few calm clicks.", "/tools/invoice", "↗", "peach"],
-] as const;
+const video = "https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260315_073750_51473149-4350-4920-ae24-c8214286f323.mp4";
 
 export default function Home() {
-  return <main className="dh-home">
-    <a className="dh-skip" href="#workspace">Skip to workspace</a>
-    <header className="dh-nav dh-shell"><Link href="/" className="dh-brand"><span className="dh-brand-mark">d↗</span><span><b>dhansetu</b><small>YOUR EVERYDAY ADVANTAGE</small></span></Link><nav className="dh-desktop-nav"><a href="#workspace">Workspace</a><a href="#how">How it works</a><a href="#pricing">Pricing</a></nav><Link href="/login" className="dh-login">Sign in <span>↗</span></Link></header>
-    <section id="workspace" className="dh-hero dh-shell"><div className="dh-hero-copy"><p className="dh-eyebrow">A LITTLE CLARITY. A LOT MORE POSSIBILITY.</p><h1>Your life.<br />Less busy.<br /><em>More brilliant.</em></h1><p className="dh-lead">A thoughtful home for your money, documents, and next big idea. Make room for the work—and life—that matters.</p><div className="dh-actions"><a href="#tools" className="dh-button dh-button-primary">Explore the workspace <span>↗</span></a><Link href="/smartbudget" className="dh-button dh-button-quiet">Open SmartBudget</Link></div><div className="dh-proof"><span>✦ Browser-based tools</span><span>✦ Built for everyday India</span></div></div><WorkspaceScene /><div className="dh-hero-note"><span>01 / 04</span><span>DESIGNED FOR THE<br />MOMENTS IN BETWEEN</span></div></section>
-    <div className="dh-ribbon"><span>ONE HUB. MANY POSSIBILITIES.</span><span>Money clarity <i>✦</i></span><span>Everyday documents <i>✦</i></span><span>Your next idea <i>✦</i></span></div>
-    <section id="tools" className="dh-section dh-shell"><div className="dh-section-heading"><div><p className="dh-eyebrow">THE WORKSPACE</p><h2>Big little tools.<br /><em>Real-life possibilities.</em></h2></div><p>Useful things for the things you do every day. Private by design, quietly powerful by nature.</p></div><div className="dh-tool-grid">{tools.map(([title, text, href, icon, tone]) => <Link href={href} className={`dh-tool-card ${tone}`} key={title}><span className="dh-tool-icon">{icon}</span><span className="dh-tool-arrow">↗</span><h3>{title}</h3><p>{text}</p><span className="dh-tool-link">Open tool <b>→</b></span></Link>)}</div></section>
-    <section id="how" className="dh-how dh-shell"><div><p className="dh-eyebrow">A BETTER WAY FORWARD</p><h2>A calmer way<br /><em>to get there.</em></h2></div><div className="dh-steps"><div><b>01</b><h3>Find your focus</h3><p>Start with the one thing that would make today feel lighter.</p></div><div><b>02</b><h3>Make it your own</h3><p>Your files stay close. Your workflow stays wonderfully yours.</p></div><div><b>03</b><h3>Move forward</h3><p>Small wins compound into the life you meant to build.</p></div></div></section>
-    <section className="dh-idea dh-shell"><div><p className="dh-eyebrow">THE IDEA LAB</p><h2>That idea in your head?<br /><em>Give it a first step.</em></h2><p>Describe what you are thinking. Get a clear, practical starting point in seconds.</p></div><form action="/tools" method="get"><label htmlFor="idea">YOUR NEXT BIG IDEA</label><textarea id="idea" name="idea" required maxLength={1000} rows={3} placeholder="I want to build an AI service that..."></textarea><button className="dh-button dh-button-primary" type="submit">Explore my idea <span>↗</span></button><small>A starting point, not a promise. Always make the final call yourself.</small></form></section>
-    <section id="pricing" className="dh-pricing dh-shell"><div className="dh-section-heading"><div><p className="dh-eyebrow">MAKE IT YOURS</p><h2>One good decision<br /><em>can change a lot.</em></h2></div><p>Choose the workspace that fits your next chapter. One payment, account-based access.</p></div><div className="dh-price-grid">{Object.entries(PUBLIC_PLANS).map(([id, tier], index) => <article className={`dh-price-card ${index === 2 ? "featured" : ""}`} key={id}>{index === 2 && <span className="dh-price-tag">MOST POPULAR</span>}<p className="dh-price-kicker">{id === "free" ? "START HERE" : index === 1 ? "A STARTING POINT" : "FOR THE FULL PICTURE"}</p><h3>{tier.label}</h3><strong>{tier.amountPaise === 0 ? "₹0" : `₹${(tier.amountPaise / 100).toLocaleString("en-IN")}`}</strong><span className="dh-price-one">{id === "free" ? "NO PAYMENT · CORE TOOLS" : "ONE-TIME · LIFETIME ACCESS"}</span><ul><li>✓ One personal account</li><li>✓ {id === "free" ? "Core tools to get started" : "Secure Razorpay checkout"}</li><li>✓ {id === "free" ? "Upgrade whenever ready" : "Purchase history and receipt"}</li></ul>{id === "free" ? <Link href="/tools" className="dh-price-button">Start free <span>↗</span></Link> : <Link href={`/checkout?tier=${id}`} className="dh-price-button">Get lifetime access <span>↗</span></Link>}<p className="dh-legal">By purchasing you agree to our <Link href="/terms">Terms</Link>, <Link href="/privacy">Privacy</Link> and <Link href="/refund">Refund Policy</Link>.</p></article>)}</div></section>
-    <section className="dh-end dh-shell"><span className="dh-end-orb">✦</span><p className="dh-eyebrow">YOUR NEXT CHAPTER STARTS HERE</p><h2>Make space for<br /><em>what’s next.</em></h2><a href="#workspace" className="dh-button dh-button-primary">Enter your workspace <span>↗</span></a></section>
+  const [open, setOpen] = useState(false);
+  return <main className="bloom-page">
+    <video className="bloom-video" autoPlay muted loop playsInline aria-hidden="true"><source src={video} type="video/mp4" /></video>
+    <div className="bloom-wash" />
+    <div className="bloom-shell">
+      <section className="bloom-left">
+        <div className="bloom-panel bloom-panel-strong" />
+        <div className="bloom-content">
+          <header className="bloom-nav"><Link href="/" className="bloom-brand"><span className="bloom-logo">d</span><span>dhansetu</span></Link><button className="glass-pill menu-button" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? <X size={16} /> : <Menu size={16} />} <span>Menu</span></button></header>
+          {open && <nav className="bloom-mobile-menu liquid-glass-strong"><Link href="/tools">Workspace</Link><Link href="/smartbudget">SmartBudget</Link><Link href="/contact">Contact</Link><Link href="/login">Sign in</Link></nav>}
+          <div className="bloom-hero"><span className="bloom-mark bloom-mark-large">d</span><h1>Innovating the <em>spirit</em> of <span>bloom</span> AI</h1><p>Clarity for your money, momentum for your next idea.</p><Link className="bloom-cta liquid-glass-strong" href="/tools">Explore Now <span className="icon-orb"><Download size={15} /></span></Link><div className="bloom-tags"><span className="liquid-glass">Artistic Gallery</span><span className="liquid-glass">AI Generation</span><span className="liquid-glass">3D Structures</span></div></div>
+          <footer className="bloom-quote"><small>VISIONARY DESIGN</small><blockquote>“We imagined a realm <em>with no ending.</em>”</blockquote><div className="bloom-author"><i /> MARCUS AURELIO <i /></div></footer>
+        </div>
+      </section>
+      <aside className="bloom-right"><div className="bloom-top-actions"><div className="liquid-glass social-pill"><a href="https://twitter.com" aria-label="Twitter">𝕏</a><a href="https://linkedin.com" aria-label="LinkedIn">in</a><a href="https://instagram.com" aria-label="Instagram">◎</a><ArrowRight size={15} /></div><Link href="/login" className="liquid-glass account-pill"><Sparkles size={15} /> Account</Link></div><div className="liquid-glass bloom-community"><Sparkles size={18} /><strong>Enter our ecosystem</strong><p>Tools that turn everyday decisions into beautiful progress.</p></div><div className="bloom-features liquid-glass-strong"><div className="feature-grid"><div className="liquid-glass feature-card"><Wand2 size={20} /><strong>Processing</strong><span>Ideas into useful steps</span></div><div className="liquid-glass feature-card"><BookOpen size={20} /><strong>Growth Archive</strong><span>Your progress, remembered</span></div></div><Link href="/tools/image-to-pdf" className="liquid-glass feature-bottom"><span className="feature-thumb">✦</span><span><strong>Advanced Plant Sculpting</strong><small>Shape a clearer future with focused tools.</small></span><span className="plus">+</span></Link></div></aside>
+    </div>
   </main>;
 }
