@@ -1,16 +1,14 @@
 export function JsonLd() {
   const data = {
     '@context': 'https://schema.org',
-    '@type': 'SoftwareApplication',
-    name: 'Dhansetu Hub Lifetime Pass',
-    operatingSystem: 'Web/Windows/Android',
-    applicationCategory: 'Productivity / Finance',
-    offers: {
-      '@type': 'Offer',
-      price: '99.00',
-      priceCurrency: 'INR',
-      availability: 'https://schema.org/InStock',
-    },
+    '@type': 'Product',
+    name: 'Dhansetu Hub',
+    description: 'Browser-based tools for money clarity and everyday work.',
+    brand: { '@type': 'Brand', name: 'Dhansetu Hub' },
+    offers: [
+      { '@type': 'Offer', name: 'SmartBudget Pro', price: '149', priceCurrency: 'INR', availability: 'https://schema.org/InStock', url: 'https://dhansetuhub.in/checkout?tier=smartbudget_pro' },
+      { '@type': 'Offer', name: 'DhanSetu All Access', price: '399', priceCurrency: 'INR', availability: 'https://schema.org/InStock', url: 'https://dhansetuhub.in/checkout?tier=all_access' },
+    ],
   };
 
   return (

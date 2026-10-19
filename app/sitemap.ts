@@ -2,12 +2,7 @@ import { MetadataRoute } from 'next';
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const baseUrl = 'https://dhansetuhub.in';
-  const routes = [
-    '', '/tools', '/tools/image-to-pdf', '/tools/invoice', '/smartbudget',
-    '/tax-estimator', '/gst', '/resume-ai', '/pdf-studio', '/peopledesk',
-    '/partners', '/join-as-expert', '/affiliate', '/contact', '/privacy',
-    '/terms', '/refund', '/delivery',
-  ];
+  const routes = ['', '/tools', '/pricing', '/privacy', '/terms'];
 
   return routes.map((route) => ({
     url: `${baseUrl}${route}`,

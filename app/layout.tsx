@@ -17,8 +17,23 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://dhansetuhub.in"),
   title: "Dhansetu Hub — Your Bridge to Better Money Decisions",
-  description: "SmartBudget, Resume AI, PDF Studio, and PeopleDesk in one local-first, privacy-centric bundle.",
+  description: "A thoughtful home for your money, documents, and next big idea. Browser-based tools built for everyday India. Private by design, quietly powerful.",
+  openGraph: {
+    title: "Dhansetu Hub — Your Bridge to Better Money Decisions",
+    description: "A thoughtful home for your money, documents, and next big idea. Browser-based tools built for everyday India. Private by design, quietly powerful.",
+    url: "https://dhansetuhub.in",
+    siteName: "Dhansetu Hub",
+    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "Dhansetu Hub" }],
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Dhansetu Hub — Your Bridge to Better Money Decisions",
+    description: "A thoughtful home for your money, documents, and next big idea. Browser-based tools built for everyday India. Private by design, quietly powerful.",
+    images: ["/og-image.png"],
+  },
 };
 
 export default function RootLayout({
