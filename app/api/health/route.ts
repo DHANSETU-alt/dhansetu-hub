@@ -11,10 +11,11 @@ export async function GET() {
     status: 'ok',
     service: 'dhansetu-hub',
     timestamp: new Date().toISOString(),
-    origin: 200,
-    paymentReady: payment.live,
+    paymentReady: payment.configured,
     paymentEndpoint,
-    paymentEndpointStatus: payment.live ? 200 : 503,
-    webhookSignatureVerified: payment.webhookSignature,
+    paymentEndpointStatus: payment.configured ? 200 : 503,
+    paymentMode: payment.mode,
+    transactionVerified: payment.transactionVerified,
+    webhookSecretConfigured: payment.webhookSecretConfigured,
   }, { headers: { 'Cache-Control': 'no-store' } });
 }

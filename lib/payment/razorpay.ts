@@ -1,6 +1,8 @@
 import Razorpay from "razorpay";
 import type { RazorpayOrder } from "./types";
 import { createTestOrder, getTestOrder, testMode } from "./test-store";
+import { capturedPaymentId } from "./captured-payment";
+import { testPurchaseByOrder } from "./test-store";
 import type { TierId } from "./tiers";
 
 function secrets() {
@@ -31,4 +33,12 @@ export async function fetchOrder(orderId: string): Promise<RazorpayOrder | null>
   const client = new Razorpay({ key_id: keyId, key_secret: keySecret });
   try { return await client.orders.fetch(orderId) as unknown as RazorpayOrder; }
   catch { return null; }
+}
+
+export async function fetchCapturedPaymentId(order: RazorpayOrder): Promise<string | null> {
+  if (testMode()) return testPurchaseByOrder(order.id)?.razorpay_payment_id ?? null;
+  const { keyId, keySecret } = secrets();
+  const client = new Razorpay({ key_id: keyId, key_secret: keySecret });
+  const result = await client.orders.fetchPayments(order.id);
+  return capturedPaymentId(order, result.items);
 }
