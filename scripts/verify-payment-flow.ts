@@ -61,6 +61,18 @@ try {
   const stateAfterDuplicate = await (await fetch(`${base}/api/test/payment-state`)).json();
   assert(stateAfterDuplicate.purchases.filter((p: { status: string }) => p.status === "paid").length === 1 && stateAfterDuplicate.seats.founding_lifetime === 1, "duplicate delivery grants exactly once");
 
+  const repeat = await create("user-valid");
+  assert(repeat.orderId === first.orderId, "repeat purchase restores the paid order instead of creating a charge");
+
+  const allAccess = await create("user-bundle", "all_access");
+  assert((await verify("user-bundle", allAccess.orderId, "pay_bundle")).status === 200, "All Access purchase activates");
+  const includedPro = await create("user-bundle", "smartbudget_pro");
+  assert(includedPro.orderId === allAccess.orderId, "All Access owner cannot be charged again for included Pro access");
+  const pro = await create("user-pro", "smartbudget_pro");
+  assert((await verify("user-pro", pro.orderId, "pay_pro")).status === 200, "Pro purchase activates");
+  const upgrade = await create("user-pro", "all_access");
+  assert(upgrade.orderId !== pro.orderId, "Pro owner can purchase the All Access upgrade");
+
   const tamperedSignature = await verify("user-valid", first.orderId, "pay_wrong", "0".repeat(64));
   assert(tamperedSignature.status === 400, "tampered payment signature is rejected");
 
@@ -79,7 +91,7 @@ try {
   const seatState = await (await fetch(`${base}/api/test/payment-state`)).json();
   assert(successes === 50 && seatState.seats.team_lifetime === 50, "concurrent purchases never exceed the seat limit");
 
-  console.log(`\nPayment flow regression guard: ${passed}/8 assertions passed.`);
+  console.log(`\nPayment flow regression guard: ${passed} assertions passed.`);
 } catch (error) {
   console.error(serverLog.slice(-5000)); throw error;
 } finally {
