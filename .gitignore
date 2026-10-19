@@ -1,27 +1,40 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
 .DS_Store
-shakthi.db
-workspaces/
-__pycache__/
-*.pyc
-.env
-.venv/
-.sheets_sync_state.json
-.alerts_sync_state.json
-*service-account*.json
-.bugfixes/
+*.pem
 
-# dashboard (Next.js)
-dashboard/node_modules/
-dashboard/.next/
-dashboard/next-env.d.ts
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# start_dashboard.sh / stop_dashboard.sh
-logs/
-.api.pid
-.dashboard.pid
+# local env files
+.env*.local
+.env.selfhost
 
-# Dhansetu PDF Studio -- uploaded/processed files, not source
-pdf_studio_files/
+# vercel
+.vercel
 
-# graft's local graph cache — regenerable, not committed (run `graft build`).
-/graft/
+# Supabase local link metadata
+/supabase/.temp/
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts

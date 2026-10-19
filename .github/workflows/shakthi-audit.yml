@@ -1,0 +1,25 @@
+name: Shakthi audit
+
+on:
+  push:
+    branches: [main, codex-launch-20261019]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test -- --run
+      - name: Check required launch assets
+        run: test -f app/api/health/route.ts && test -f app/api/webhooks/razorpay/route.ts && test -f shakthi.config.js

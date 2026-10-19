@@ -1,0 +1,11 @@
+[Unit]
+Description=Run DhanSetu research once daily with restart catch-up
+
+[Timer]
+OnCalendar=*-*-* 06:00:00 Asia/Kolkata
+Persistent=true
+RandomizedDelaySec=15m
+Unit=dhansetu-research.service
+
+[Install]
+WantedBy=timers.target

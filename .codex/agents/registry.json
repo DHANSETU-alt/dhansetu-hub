@@ -1,0 +1,4 @@
+{
+  "agents": {"browser":10,"ecc":9,"ruflo":10,"devops":8,"security":8,"payment":7,"frontend":7,"backend":7,"qa":8,"audit":8},
+  "policy": "Ruflo assigns the highest available agent; ECC validates after each change; reviews are persisted."
+}

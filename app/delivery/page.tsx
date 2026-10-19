@@ -1,0 +1,2 @@
+import { LegalPage } from "@/components/LegalPage";
+export default function DeliveryPage() { return <LegalPage title="Digital Delivery Policy"><p>Access is digital and normally activated immediately after Razorpay confirms payment. The welcome page checks activation automatically and redirects to the application while your signed-in session remains active.</p><p>No physical item is shipped. If activation has not completed within 60 seconds, retain the displayed order reference and contact support@dhansetuhub.in.</p></LegalPage>; }
