@@ -15,5 +15,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test -- --run
+      - name: Browser/public verification equivalent
+        run: node scripts/ruflo-final-verify.js
       - name: Verify public launch
         run: VERIFY_SECONDS=30 VERIFY_INTERVAL=10 bash scripts/verify-live.sh
