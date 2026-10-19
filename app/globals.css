@@ -6,6 +6,19 @@
   --background: #ffffff;
   --foreground: #171717;
   --font-humanist-serif: "Baskerville", "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "URW Palladio L", Georgia, serif;
+
+  /* Gujarati sits in the same stack as English so bilingual pages keep one rhythm
+     instead of falling back to a mismatched system face. */
+  --font-display: "Bricolage Grotesque", "Noto Sans Gujarati", var(--font-geist-sans), system-ui, sans-serif;
+  --font-body: "Plus Jakarta Sans", "Noto Sans Gujarati", var(--font-geist-sans), system-ui, sans-serif;
+
+  --ink: #0d1b2a;
+  --ink-soft: #4a5a6a;
+  --line: #e2e8f0;
+  --surface: #ffffff;
+  --surface-sunk: #f6f8fb;
+  --accent: #0f766e;
+  --accent-soft: #ecfdf5;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -18,7 +31,33 @@
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body);
+}
+
+h1, h2, h3, .font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.015em;
+}
+
+/* Rupee columns only line up with tabular figures. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes ds-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Animates from a visible resting state, so content is readable even if motion never runs. */
+.ds-rise {
+  animation: ds-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-rise {
+    animation: none;
+  }
 }
 
 @layer utilities {
