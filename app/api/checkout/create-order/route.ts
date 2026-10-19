@@ -4,7 +4,9 @@ import { authenticatedUser } from "@/lib/payment/auth";
 import { TIERS, isTierId } from "@/lib/payment/tiers";
 import { checkoutRateAllowed, purchasesForUser, saveCreatedPurchase, seatsRemaining } from "@/lib/payment/records";
 import { purchaseCoversTier } from "@/lib/payment/purchase-access";
-import { createOrder, fetchOrder, razorpayKeyId } from "@/lib/payment/razorpay";
+import { createOrder, fetchCapturedPaymentId, fetchOrder, razorpayKeyId } from "@/lib/payment/razorpay";
+
+import { grantEntitlement } from "@/lib/payment/entitlement";
 
 export const runtime = "nodejs";
 const inputSchema = z.object({ tier: z.string(), consent: z.literal(true) });
@@ -27,7 +29,12 @@ export async function POST(request: NextRequest) {
       const providerOrder = await fetchOrder(pending.razorpay_order_id);
       if (!providerOrder) throw new Error("Pending order could not be checked");
       if (providerOrder.amount !== TIERS[tier].amountPaise || providerOrder.currency !== "INR" || providerOrder.notes?.user_id !== user.id || providerOrder.notes?.tier !== tier) throw new Error("Pending order does not match purchase");
-      if (providerOrder.status === "paid") return NextResponse.json({ recovery: true, orderId: providerOrder.id });
+      if (providerOrder.status === "paid") {
+        const paymentId = await fetchCapturedPaymentId(providerOrder);
+        if (!paymentId) throw new Error("Captured payment is not yet available");
+        await grantEntitlement(providerOrder.id, paymentId, user.id, tier, user.email);
+        return NextResponse.json({ recovery: true, orderId: providerOrder.id });
+      }
       return NextResponse.json({ orderId: providerOrder.id, keyId: razorpayKeyId(), amount: TIERS[tier].amountPaise, currency: "INR", tier });
     }
     if ((await seatsRemaining(tier)) < 1) return NextResponse.json({ error: "This tier is sold out" }, { status: 409 });

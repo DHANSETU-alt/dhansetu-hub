@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const mocks = vi.hoisted(() => ({ user: vi.fn(), purchases: vi.fn(), rate: vi.fn(), seats: vi.fn(), save: vi.fn(), create: vi.fn(), fetch: vi.fn(), key: vi.fn() }));
+const mocks = vi.hoisted(() => ({ user: vi.fn(), purchases: vi.fn(), rate: vi.fn(), seats: vi.fn(), save: vi.fn(), create: vi.fn(), fetch: vi.fn(), key: vi.fn(), captured: vi.fn(), grant: vi.fn() }));
 vi.mock("@/lib/payment/auth", () => ({ authenticatedUser: mocks.user }));
 vi.mock("@/lib/payment/records", () => ({ purchasesForUser: mocks.purchases, checkoutRateAllowed: mocks.rate, seatsRemaining: mocks.seats, saveCreatedPurchase: mocks.save }));
-vi.mock("@/lib/payment/razorpay", () => ({ createOrder: mocks.create, fetchOrder: mocks.fetch, razorpayKeyId: mocks.key }));
+vi.mock("@/lib/payment/razorpay", () => ({ createOrder: mocks.create, fetchOrder: mocks.fetch, fetchCapturedPaymentId: mocks.captured, razorpayKeyId: mocks.key }));
+vi.mock("@/lib/payment/entitlement", () => ({ grantEntitlement: mocks.grant }));
 import { POST } from "@/app/api/checkout/create-order/route";
 
 function request(body: unknown = { tier: "smartbudget_pro", consent: true }) {
@@ -14,6 +15,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.user.mockResolvedValue({ id: "user-1", email: "customer@example.test" });
   mocks.purchases.mockResolvedValue([]); mocks.rate.mockResolvedValue(true); mocks.seats.mockResolvedValue(10);
+  mocks.captured.mockResolvedValue("pay_captured"); mocks.grant.mockResolvedValue({ granted: true, idempotent: false });
   mocks.create.mockResolvedValue({ id: "order_new" }); mocks.key.mockReturnValue("rzp_test_example");
 });
 describe("checkout order route", () => {
@@ -44,7 +46,15 @@ describe("checkout order route", () => {
     mocks.purchases.mockResolvedValue([{ status: "created", tier: "smartbudget_pro", razorpay_order_id: "order_pending" }]);
     mocks.fetch.mockResolvedValue({ id: "order_pending", status: "paid", amount: 14900, currency: "INR", notes: { user_id: "user-1", tier: "smartbudget_pro" } });
     expect(await (await POST(request())).json()).toEqual({ recovery: true, orderId: "order_pending" });
+    expect(mocks.grant).toHaveBeenCalledWith("order_pending", "pay_captured", "user-1", "smartbudget_pro", "customer@example.test");
     expect(mocks.create).not.toHaveBeenCalled();
+  });
+  it("does not create another order or grant access when capture cannot be confirmed", async () => {
+    mocks.purchases.mockResolvedValue([{ status: "created", tier: "smartbudget_pro", razorpay_order_id: "order_pending" }]);
+    mocks.fetch.mockResolvedValue({ id: "order_pending", status: "paid", amount: 14900, currency: "INR", notes: { user_id: "user-1", tier: "smartbudget_pro" } });
+    mocks.captured.mockResolvedValue(null);
+    expect((await POST(request())).status).toBe(503);
+    expect(mocks.grant).not.toHaveBeenCalled(); expect(mocks.create).not.toHaveBeenCalled();
   });
   it("returns a recoverable error without provider internals", async () => {
     mocks.rate.mockRejectedValue(new Error("private database details"));

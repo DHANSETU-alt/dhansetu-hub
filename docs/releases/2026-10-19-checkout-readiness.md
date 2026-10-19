@@ -17,7 +17,8 @@ Observed on 19 October 2026:
 ## Changes
 
 - Restore covered paid purchases instead of creating another Razorpay order.
-- Reuse matching unresolved orders; route provider-paid orders awaiting local activation to recovery.
+- Reuse matching unresolved orders; fetch the matching captured payment and retry the idempotent entitlement grant before returning recovery.
+- Reconcile the authenticated user's order while polling the recovery page, so failed browser callbacks and delayed webhooks do not require a second checkout.
 - Preserve an upgrade path from Pro to All Access.
 - Guard duplicate clicks and Razorpay script readiness; recover from failed network/JSON requests.
 - Continue account recovery after browser verification interruptions rather than encouraging another payment.
@@ -28,14 +29,14 @@ Observed on 19 October 2026:
 
 ## Verification and limits
 
-`npm test`: 39 tests passed, including direct mocked route tests for purchase restoration, pending-order reuse, bundled access and server prices.
+`npm test`: 46 tests passed, including direct mocked route tests for purchase restoration, pending-order reuse, bundled access and server prices.
 `npm run lint`: no errors; three existing warnings (fonts, image element, unused eslint directive).
 `npm run typecheck`: passed after correcting the browser timer type.
 `npm run build`: passed, including standalone output and postbuild asset copy.
 `npm run verify:payment` could not start through the tsx CLI due to an IPC socket permission error. An alternative invocation did not produce a completed harness result. Neither counts as a pass.
 
 No real customer account was used, no charge was made, and captured-payment/webhook/receipt delivery were not verified against production services.
-The Render plugin installation was reported by the user, but no Render service-management tools were exposed in the execution tool inventory. Deployment, environment checks on the actual Render service, and rollback-service controls remain unverified.
+Render access is now verified in the user-confirmed workspace. The existing `dhansetu-hub` service (`srv-danctvrbc2fs73dvv80g`) tracks `codex-launch-20261019`, with commit-triggered automatic deploys, `npm ci && npm run build`, `npm start`, and `/api/health`. The recorded rollback deployment is `dep-dbb1c6ajnfac739h5rd0` at the baseline revision. Release monitoring and transaction verification remain separate gates.
 
 ## Release procedure
 
