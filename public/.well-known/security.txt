@@ -1,0 +1,5 @@
+Contact: mailto:support@dhansetuhub.in
+Contact: https://dhansetuhub.in/contact
+Expires: 2027-10-01T00:00:00Z
+Preferred-Languages: en, hi, gu
+Canonical: https://dhansetuhub.in/.well-known/security.txt

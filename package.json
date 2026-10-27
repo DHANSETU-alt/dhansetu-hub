@@ -13,7 +13,8 @@
     "test": "vitest run",
     "verify:payment": "tsx scripts/verify-payment-flow.ts",
     "research:daily": "tsx scripts/daily-research.ts",
-    "postbuild": "cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/"
+    "postbuild": "cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
+    "test:security": "node --test scripts/check-security-headers.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

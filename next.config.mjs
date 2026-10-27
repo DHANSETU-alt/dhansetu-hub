@@ -1,3 +1,5 @@
+import { contentSecurityPolicy } from './config/content-security-policy.mjs';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
@@ -12,6 +14,7 @@ const nextConfig = {
       {
         source: '/(.*)',
         headers: [
+          { key: 'Content-Security-Policy', value: contentSecurityPolicy() },
           { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
@@ -22,6 +25,13 @@ const nextConfig = {
       {
         source: '/api/:path*',
         headers: [{ key: 'Cache-Control', value: 'no-store' }],
+      },
+      {
+        source: '/.well-known/security.txt',
+        headers: [
+          { key: 'Content-Type', value: 'text/plain; charset=utf-8' },
+          { key: 'Cache-Control', value: 'public, max-age=3600' },
+        ],
       },
     ];
   },
