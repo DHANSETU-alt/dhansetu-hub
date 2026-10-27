@@ -16,7 +16,7 @@ test('production limits active content and forbids eval',()=>{
 });
 test('existing payment, font, video, analytics and auth origins are retained',()=>{
  const d=directives(contentSecurityPolicy(production));
- for(const value of ['https://checkout.razorpay.com','https://connect.facebook.net','https://app.posthog.com'])assert.ok(d.get('script-src').includes(value));
+ for(const value of ['https://checkout.razorpay.com','https://connect.facebook.net','https://app.posthog.com','https://static.cloudflareinsights.com'])assert.ok(d.get('script-src').includes(value));
  assert.ok(d.get('style-src').includes('https://fonts.googleapis.com'));
  assert.ok(d.get('font-src').includes('https://fonts.gstatic.com'));
  assert.ok(d.get('media-src').includes('https://d8j0ntlcm91z4.cloudfront.net'));

@@ -64,3 +64,5 @@ https://support.titan.email/hc/en-us/articles/900006395783-Add-DMARC-record
 https://developers.cloudflare.com/ssl/edge-certificates/caa-records/
 https://render.com/docs/custom-domains
 https://developers.cloudflare.com/dns/dnssec/
+
+Live first pass: homepage200, CSP present, production eval absent, sign-in modal visible and security.txt200. Cloudflare-injected beacon revealed one missing script origin. Added exact Cloudflare Insights script/connect origins and rechecking after deployment; no wildcard script allowlist or policy relaxation was introduced.
