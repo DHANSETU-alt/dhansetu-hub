@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
         await grantEntitlement(orderId, paymentId, user.id, purchase.tier, user.email);
       }
     }
-    return NextResponse.json({ active: await hasEntitlement(user.id), appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "https://budget.dhansetuhub.in" });
+    return NextResponse.json({ active: await hasEntitlement(user.id), appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "https://dhansetuhub.in" });
   } catch {
     return NextResponse.json({ active: false, pending: true, error: "Account verification is pending. Do not pay again." }, { status: 202 });
   }
