@@ -14,12 +14,16 @@ The founder sync does **not** copy customer Google Sheets, customer memory, cust
 2. Create a service account and download its JSON key once.
 3. Create a private Google Sheet with any title.
 4. Share that Sheet with the service-account `client_email` as Editor.
-5. Base64url-encode the JSON key and set these server-only variables in Render:
+5. Prefer a Render Secret File: upload the downloaded JSON as `google-service-account.json` and set these server-only variables in Render:
 
 ```text
 GOOGLE_SHEETS_SPREADSHEET_ID=<the Sheet id>
-GOOGLE_SERVICE_ACCOUNT_JSON_B64=<base64url-encoded JSON>
+GOOGLE_SERVICE_ACCOUNT_JSON_PATH=/etc/secrets/google-service-account.json
 ```
+
+The base64url environment variable remains supported for hosts without Secret
+Files, but the Secret File path is preferred because the key never needs to be
+copied into an environment-variable textbox.
 
 Do not add the key to GitHub, `.env` files committed to source, Cloudflare Worker code, browser storage, or customer-facing HTML.
 

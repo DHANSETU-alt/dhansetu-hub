@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { readFileSync } from "node:fs";
 import type { FounderDashboardData } from "@/lib/founder/dashboard-data";
 
 const TAB_NAMES = ["Plan", "Revenue", "Goals", "Trading", "Marketing", "Audit"] as const;
@@ -28,6 +29,19 @@ function parseCredentials(raw: string | undefined): ServiceAccountCredentials {
     throw new Error("Founder Sheets service account configuration is incomplete");
   }
   return { client_email: record.client_email, private_key: record.private_key };
+}
+
+function loadCredentials(): ServiceAccountCredentials {
+  const encoded = process.env.GOOGLE_SERVICE_ACCOUNT_JSON_B64?.trim();
+  if (encoded) return parseCredentials(encoded);
+
+  const path = process.env.GOOGLE_SERVICE_ACCOUNT_JSON_PATH?.trim();
+  if (!path) throw new Error("Founder Sheets service account is not configured");
+  try {
+    return parseCredentials(Buffer.from(readFileSync(path, "utf8")).toString("base64url"));
+  } catch {
+    throw new Error("Founder Sheets service account file is unavailable");
+  }
 }
 
 function quoteTab(tab: string) {
@@ -77,7 +91,7 @@ export async function syncFounderSheet(data: FounderDashboardData): Promise<Foun
   const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID?.trim();
   if (!spreadsheetId) throw new Error("Founder Sheets spreadsheet ID is not configured");
 
-  const credentials = parseCredentials(process.env.GOOGLE_SERVICE_ACCOUNT_JSON_B64);
+  const credentials = loadCredentials();
   const auth = new google.auth.JWT({
     email: credentials.client_email,
     key: credentials.private_key,
