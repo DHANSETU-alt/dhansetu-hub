@@ -3819,7 +3819,17 @@
     import * as d3Module from 'https://cdn.jsdelivr.net/npm/d3@7/+esm';
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
     import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
-    import firebaseConfig from './firebase-applet-config.js';
+    // Inline the public Firebase client configuration so Cloudflare's static
+    // uploader can publish the design without a JavaScript sidecar file.
+    const firebaseConfig = {
+      projectId: "gen-lang-client-0041240540",
+      appId: "1:539784729668:web:7489bc4d6dc3d897d39811",
+      apiKey: "AIzaSyAjeMYuGM0hfbs86P9-Uw_OFpNfeNe3lg0",
+      authDomain: "gen-lang-client-0041240540.firebaseapp.com",
+      storageBucket: "gen-lang-client-0041240540.firebasestorage.app",
+      messagingSenderId: "539784729668",
+      measurementId: "",
+    };
 
     const d3 = window.d3 || d3Module;
     window.d3 = d3;
