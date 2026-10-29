@@ -3593,14 +3593,14 @@
           <div class="big-qr-box" id="terminalBigQrBox">
             <!-- Rendered SVG QR -->
           </div>
-          <span style="font-family:var(--font-mono); font-size:12px; font-weight:700;" id="qrTerminalPayeeText">Payee: dhansetu@icici</span>
+          <span style="font-family:var(--font-mono); font-size:12px; font-weight:700;" id="qrTerminalPayeeText">Payee: merchant VPA not configured</span>
           <span style="font-size:13px; color:var(--ledger-green); font-weight:600;" id="qrTerminalAmountText">Amount: ₹59,000.00</span>
         </div>
 
         <div class="form-grid-2">
           <div class="form-group">
             <label>UPI ID (VPA)</label>
-            <input type="text" class="form-control" id="upiIdInput" value="dhansetu@icici" placeholder="e.g. business@okaxis">
+            <input type="text" class="form-control" id="upiIdInput" value="" placeholder="e.g. business@okaxis">
           </div>
           <div class="form-group">
             <label>Payee Display Name</label>
@@ -3653,7 +3653,7 @@
         </div>
 
         <div class="wa-preview-box" id="waMessagePreview" style="background:#E7F6ED; border:1px solid #B6E2C8; border-radius:4px; padding:12px; font-size:13px; line-height:1.5; color:#0F5132; margin-bottom:14px;">
-          Namaste Apex Digital Solutions, invoice INV-2026-089 for ₹59,000.00 from DhanSetu Mercantile Studio is due on 15 Nov 2026. Kindly clear dues via UPI: dhansetu@icici or NEFT. Thank you!
+          Namaste Apex Digital Solutions, invoice INV-2026-089 for ₹59,000.00 from DhanSetu Mercantile Studio is due on 15 Nov 2026. Kindly clear dues via the verified merchant UPI or NEFT. Thank you!
         </div>
 
         <div class="modal-actions">
@@ -3818,7 +3818,7 @@
   <script type="module">
     import * as d3Module from 'https://cdn.jsdelivr.net/npm/d3@7/+esm';
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
-    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+    import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
     // Inline the public Firebase client configuration so Cloudflare's static
     // uploader can publish the design without a JavaScript sidecar file.
     const firebaseConfig = {
@@ -3829,6 +3829,18 @@
       storageBucket: "gen-lang-client-0041240540.firebasestorage.app",
       messagingSenderId: "539784729668",
       measurementId: "",
+    };
+
+    // Never ship a guessed or placeholder merchant VPA.  The founder can
+    // provision the verified VPA at runtime (window config or local vault).
+    // Until then all QR/deep-link generation is fail-closed.
+    const MERCHANT_UPI_PLACEHOLDER = 'dhansetu@icici';
+    const MERCHANT_CONFIG = {
+      upiId: String(window.__DHANSETU_MERCHANT_UPI__ || (() => {
+        try { return localStorage.getItem('dhansetu_founder_upi') || ''; } catch (e) { return ''; }
+      })()).trim(),
+      payeeName: 'DhanSetu Mercantile Studio',
+      supportEmail: 'support@dhansetuhub.in'
     };
 
     const d3 = window.d3 || d3Module;
@@ -3865,8 +3877,8 @@
         invNo: 'INV-2026-089',
         invDate: '2026-10-29',
         dueDate: '2026-11-15',
-        upiId: 'dhansetu@icici',
-        upiPayee: 'DhanSetu Mercantile Studio',
+        upiId: MERCHANT_CONFIG.upiId,
+        upiPayee: MERCHANT_CONFIG.payeeName,
         seller: {
           name: 'DhanSetu Mercantile Studio',
           gstin: '24AABCS1429B1Z0',
@@ -3905,6 +3917,27 @@
         setTimeout(function () { t.classList.remove('show'); }, 3200);
       }
 
+      function isConfiguredMerchantUpi(value) {
+        var vpa = String(value || '').trim();
+        return /^[A-Za-z0-9][A-Za-z0-9._-]{1,255}@[A-Za-z0-9.-]{2,63}$/.test(vpa) &&
+          vpa.toLowerCase() !== MERCHANT_UPI_PLACEHOLDER;
+      }
+
+      function requireMerchantUpi() {
+        if (!isConfiguredMerchantUpi(invoiceData.upiId)) {
+          showToast('Merchant UPI is not configured. Enter the founder-verified VPA before creating a QR.');
+          return false;
+        }
+        return true;
+      }
+
+      function setMerchantUpiState() {
+        var configured = isConfiguredMerchantUpi(invoiceData.upiId);
+        var payeeText = document.getElementById('qrTerminalPayeeText');
+        if (payeeText) payeeText.textContent = configured ? 'Payee: ' + invoiceData.upiId : 'Payee: merchant VPA not configured';
+        return configured;
+      }
+
       // Auto-Save to LocalStorage Vault
       var autoSaveTimeout = null;
       function triggerAutoSave() {
@@ -3927,6 +3960,9 @@
             var parsed = JSON.parse(saved);
             if (parsed && parsed.items && parsed.items.length) {
               invoiceData = parsed;
+              if (!isConfiguredMerchantUpi(invoiceData.upiId)) {
+                invoiceData.upiId = MERCHANT_CONFIG.upiId;
+              }
               showToast('Restored draft from Local Vault');
             }
           }
@@ -4015,16 +4051,22 @@
 
       // Refresh Live UPI QR Codes
       function refreshQrCodes() {
+        var configured = setMerchantUpiState();
+        var heroBox = document.getElementById('heroQrBox');
+        var termBox = document.getElementById('terminalBigQrBox');
+        if (!configured) {
+          if (heroBox) heroBox.innerHTML = '<div style="padding:12px; font:700 11px var(--font-mono); color:#92400E; text-align:center;">MERCHANT VPA REQUIRED</div>';
+          if (termBox) termBox.innerHTML = '<div style="padding:24px; font:700 12px var(--font-mono); color:#92400E; text-align:center;">Enter the founder-verified UPI ID to generate a payment QR.</div>';
+          return;
+        }
         var upiStr = 'upi://pay?pa=' + encodeURIComponent(invoiceData.upiId) +
           '&pn=' + encodeURIComponent(invoiceData.upiPayee) +
           '&am=' + calculated.grand.toFixed(2) +
           '&cu=INR&tn=' + encodeURIComponent(invoiceData.invNo);
 
         var heroSvg = generateQrSvg(upiStr, 72);
-        var heroBox = document.getElementById('heroQrBox');
         if (heroBox) heroBox.innerHTML = heroSvg;
 
-        var termBox = document.getElementById('terminalBigQrBox');
         if (termBox) termBox.innerHTML = generateQrSvg(upiStr, 190);
 
         var copyBtn = document.getElementById('btnCopyUpiHero');
@@ -4360,7 +4402,7 @@
         document.getElementById('upiIdInput').value = invoiceData.upiId;
         document.getElementById('upiNameInput').value = invoiceData.upiPayee;
         document.getElementById('upiNoteInput').value = invoiceData.invNo;
-        document.getElementById('qrTerminalPayeeText').textContent = 'Payee: ' + invoiceData.upiId;
+        setMerchantUpiState();
         document.getElementById('qrTerminalAmountText').textContent = 'Amount: ' + formatINR(calculated.grand);
         qrCustomModal.classList.add('active');
         refreshQrCodes();
@@ -4368,12 +4410,13 @@
       btnCloseQrModal.addEventListener('click', function () { qrCustomModal.classList.remove('active'); });
 
       document.getElementById('upiIdInput').addEventListener('input', function (e) {
-        invoiceData.upiId = e.target.value.trim() || 'dhansetu@icici';
-        document.getElementById('qrTerminalPayeeText').textContent = 'Payee: ' + invoiceData.upiId;
+        invoiceData.upiId = e.target.value.trim();
+        setMerchantUpiState();
         refreshQrCodes();
       });
 
       document.getElementById('btnCopyUpiDeepLink').addEventListener('click', function () {
+        if (!requireMerchantUpi()) return;
         var upiStr = 'upi://pay?pa=' + encodeURIComponent(invoiceData.upiId) +
           '&pn=' + encodeURIComponent(invoiceData.upiPayee) +
           '&am=' + calculated.grand.toFixed(2) +
@@ -4386,6 +4429,7 @@
       var btnCopyHero = document.getElementById('btnCopyUpiHero');
       if (btnCopyHero) {
         btnCopyHero.addEventListener('click', function () {
+          if (!requireMerchantUpi()) return;
           var upiStr = 'upi://pay?pa=' + encodeURIComponent(invoiceData.upiId) +
             '&pn=' + encodeURIComponent(invoiceData.upiPayee) +
             '&am=' + calculated.grand.toFixed(2) +
@@ -4397,6 +4441,7 @@
       }
 
       document.getElementById('btnDownloadQrSvg').addEventListener('click', function () {
+        if (!requireMerchantUpi()) return;
         var termBox = document.getElementById('terminalBigQrBox');
         var svgData = termBox.innerHTML;
         var blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
@@ -4687,6 +4732,7 @@
 
       // Print Official Rule 48 GST Tax Invoice with Official DhanSetu Hub Logo
       function triggerPrint() {
+        if (!requireMerchantUpi()) return;
         applyToHeroTicket();
         var printArea = document.getElementById('printArea');
         printArea.classList.remove('no-print');
@@ -5758,6 +5804,53 @@
       }
 
       // Google Sheets Real-Time Sync Action & Auth Management
+      function googleAuthErrorMessage(error) {
+        var code = error && error.code ? error.code : 'auth/unknown';
+        var messages = {
+          'auth/unauthorized-domain': 'This domain is not authorized in Firebase. Add dhansetuhub.in and www.dhansetuhub.in under Firebase Authentication > Settings > Authorized domains.',
+          'auth/popup-blocked': 'The browser blocked the Google sign-in popup. Redirect sign-in will be attempted.',
+          'auth/popup-closed-by-user': 'The Google sign-in popup was closed before authentication completed.',
+          'auth/cancelled-popup-request': 'Another Google sign-in request is already running.',
+          'auth/operation-not-allowed': 'Google sign-in is not enabled for this Firebase project.'
+        };
+        return (messages[code] || 'Google authentication failed. Check the Firebase OAuth configuration.') + ' [' + code + ']';
+      }
+
+      function applyGoogleAuthResult(result) {
+        if (!result) return false;
+        var credential = GoogleAuthProvider.credentialFromResult(result);
+        if (!credential || !credential.accessToken) {
+          throw new Error('Could not obtain Google OAuth access token');
+        }
+        cachedAccessToken = credential.accessToken;
+        currentUser = result.user;
+        return true;
+      }
+
+      getRedirectResult(auth).then(function (result) {
+        if (!result) return;
+        try {
+          if (applyGoogleAuthResult(result)) {
+            var redirectStatus = document.getElementById('sheetSyncStatus');
+            if (redirectStatus) {
+              redirectStatus.textContent = 'AUTHENTICATED · SYNC READY';
+              redirectStatus.style.background = '#DCFCE7';
+              redirectStatus.style.color = '#166534';
+            }
+            showToast('Google authentication completed. Click sync to write the founder ledger.');
+          }
+        } catch (error) {
+          console.error('Google redirect result error:', error);
+          var redirectStatus = document.getElementById('sheetSyncStatus');
+          if (redirectStatus) redirectStatus.textContent = googleAuthErrorMessage(error);
+          showToast(googleAuthErrorMessage(error));
+        }
+      }).catch(function (error) {
+        console.error('Google redirect authentication error:', error);
+        var redirectStatus = document.getElementById('sheetSyncStatus');
+        if (redirectStatus) redirectStatus.textContent = googleAuthErrorMessage(error);
+      });
+
       onAuthStateChanged(auth, function (user) {
         currentUser = user;
         var info = document.getElementById('sheetAccountInfo');
@@ -5915,21 +6008,21 @@
             status.style.color = '#92400E';
 
             var result = await signInWithPopup(auth, provider);
-            var credential = GoogleAuthProvider.credentialFromResult(result);
-            if (!credential || !credential.accessToken) {
-              throw new Error('Could not obtain Google OAuth access token');
-            }
-            cachedAccessToken = credential.accessToken;
-            currentUser = result.user;
+            applyGoogleAuthResult(result);
           }
 
           await syncDataToGoogleSheets(cachedAccessToken);
         } catch (error) {
           console.error('Google Sheets sync error:', error);
-          status.textContent = 'SYNC FAILED (RETRY)';
+          var errorMessage = googleAuthErrorMessage(error);
+          status.textContent = errorMessage;
           status.style.background = '#FEE2E2';
           status.style.color = '#991B1B';
-          showToast('Google authentication failed or was cancelled');
+          showToast(errorMessage);
+          if (error && (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user')) {
+            status.textContent = 'REDIRECT AUTHENTICATION...';
+            await signInWithRedirect(auth, provider);
+          }
         }
       });
 
@@ -6137,6 +6230,7 @@
 
       // Dynamic UPI Payment for Salaried Passes
       function openUpiForPass(amount, note) {
+        if (!requireMerchantUpi()) return;
         document.getElementById('upiIdInput').value = invoiceData.upiId;
         document.getElementById('upiNameInput').value = invoiceData.upiPayee;
         document.getElementById('upiNoteInput').value = note;
