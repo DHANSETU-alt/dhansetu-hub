@@ -3,6 +3,7 @@ import { contentSecurityPolicy } from './config/content-security-policy.mjs';
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  serverExternalPackages: ['googleapis'],
   experimental: {
     // Keep type checking in-process for the current Linux/Node runner.
     // The CLI child process loses its captured JSON stream in this host.
