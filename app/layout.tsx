@@ -25,14 +25,14 @@ export const metadata: Metadata = {
     description: "A thoughtful home for your money, documents, and next big idea. Browser-based tools built for everyday India. Private by design, quietly powerful.",
     url: "https://dhansetuhub.in",
     siteName: "Dhansetu Hub",
-    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "Dhansetu Hub" }],
+    images: [{ url: "/dhansetu-logo-reference.png", width: 2048, height: 2048, alt: "DhanSetu Hub — Mercantile & Wealth OS" }],
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
     title: "Dhansetu Hub — Your Bridge to Better Money Decisions",
     description: "A thoughtful home for your money, documents, and next big idea. Browser-based tools built for everyday India. Private by design, quietly powerful.",
-    images: ["/og-image.png"],
+    images: ["/dhansetu-logo-reference.png"],
   },
 };
 
@@ -44,6 +44,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        <link rel="icon" href="/dhansetu-logo-reference.png" type="image/png" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link
