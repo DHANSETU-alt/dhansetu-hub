@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" role="img" aria-labelledby="title desc">
+  <title id="title">DhanSetu Hub — Business and GST OS</title>
+  <desc id="desc">Black and saffron bridge monogram beside the DhanSetu Hub wordmark.</desc>
+  <defs>
+    <style>
+      .ink{fill:#151515}.saffron{fill:#b56a0a}.line-ink{fill:none;stroke:#151515;stroke-linecap:round;stroke-linejoin:round}.line-saffron{fill:none;stroke:#b56a0a;stroke-linecap:round;stroke-linejoin:round}
+    </style>
+  </defs>
+  <g transform="translate(26 42)">
+    <!-- bridge deck -->
+    <path class="line-ink" stroke-width="18" d="M16 248 C98 218 176 219 270 237 C322 247 358 255 390 259"/>
+    <path class="line-saffron" stroke-width="16" d="M16 278 C111 246 188 248 268 264 C323 275 357 283 390 286"/>
+    <!-- left black suspension arch and tower -->
+    <path class="line-ink" stroke-width="12" d="M56 231 V139 C58 103 76 70 111 38"/>
+    <path class="line-ink" stroke-width="10" d="M58 142 C89 124 117 101 137 73 C151 53 160 31 164 8"/>
+    <path class="line-ink" stroke-width="14" d="M164 8 V250"/>
+    <path class="line-ink" stroke-width="12" d="M164 11 H290"/>
+    <path class="line-ink" stroke-width="15" d="M163 105 H280"/>
+    <path class="line-ink" stroke-width="12" d="M280 11 V247"/>
+    <path class="line-ink" stroke-width="10" d="M280 105 C239 101 207 92 164 77"/>
+    <path class="line-ink" stroke-width="7" d="M74 135 V220 M98 118 V226 M122 96 V231"/>
+    <!-- saffron right tower and cable -->
+    <path class="line-saffron" stroke-width="12" d="M310 231 V54 C315 94 342 132 385 161 C400 171 416 179 438 187"/>
+    <path class="line-saffron" stroke-width="13" d="M310 54 V270"/>
+    <path class="line-saffron" stroke-width="12" d="M438 187 V278"/>
+    <path class="line-saffron" stroke-width="7" d="M337 104 V247 M363 134 V253 M389 155 V258 M415 173 V267"/>
+    <!-- monogram crossbar and diagonal -->
+    <path class="saffron" d="M164 113 H280 V139 H164 Z"/>
+    <path class="saffron" d="M188 139 H230 L327 283 H278 Z"/>
+  </g>
+  <g transform="translate(480 142)">
+    <text class="ink" font-family="Georgia,Times New Roman,serif" font-size="82" font-weight="700" letter-spacing="2">DHANSETU</text>
+    <text class="saffron" x="490" font-family="Georgia,Times New Roman,serif" font-size="82" font-weight="700" letter-spacing="2">HUB</text>
+    <text class="ink" y="94" font-family="Arial,Helvetica,sans-serif" font-size="34" font-weight="700" letter-spacing="10">BUSINESS &amp; GST OS</text>
+  </g>
+</svg>
