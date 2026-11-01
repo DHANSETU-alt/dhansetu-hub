@@ -7,8 +7,10 @@ export async function GET(request: NextRequest) {
   const next = url.searchParams.get("next");
   const destination = next?.startsWith("/") && !next.startsWith("//") ? next : "/";
   // Render terminates TLS before the Next.js process, so request.url can expose the
-  // internal 0.0.0.0:10000 origin. Always send users back to the canonical public host.
-  const appOrigin = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || url.origin;
+  // internal 0.0.0.0:10000 origin. In production, never reflect that internal host
+  // into an OAuth redirect. Local development may continue to use its own origin.
+  const configuredOrigin = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+  const appOrigin = configuredOrigin || (process.env.NODE_ENV === "production" ? "https://dhansetuhub.in" : url.origin);
   const redirectTo = (path: string) => NextResponse.redirect(new URL(path, appOrigin));
   if (!code) return redirectTo("/login?error=missing_auth_code");
   if (!hasSupabasePublicConfig()) return redirectTo("/login?error=auth_unavailable");
