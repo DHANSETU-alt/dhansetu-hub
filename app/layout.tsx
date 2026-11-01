@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { TrackingProvider } from "@/components/analytics/TrackingScripts";
+import { GoogleAnalytics } from "@/components/analytics/GoogleAnalytics";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { SiteFooter } from "@/components/SiteFooter";
 
@@ -57,6 +58,7 @@ export default function RootLayout({
       >
         <JsonLd />
         <TrackingProvider />
+        <GoogleAnalytics />
         {children}
         <SiteFooter />
       </body>

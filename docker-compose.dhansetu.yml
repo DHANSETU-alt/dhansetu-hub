@@ -1,0 +1,13 @@
+services:
+  dhansetuhub-pdf-toolskit:
+    build:
+      context: .
+      dockerfile: Dockerfile.dhansetu-toolskit
+    image: dhansetu-pdf-toolskit:1.3-local-only
+    container_name: dhansetu-pdf-toolskit-local
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      NODE_ENV: production
+    restart: unless-stopped

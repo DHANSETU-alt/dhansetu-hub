@@ -18,6 +18,7 @@ const officeTools = [
   ["Vendor Security Score", "/security-score", "Open the internal passive security workflow."],
   ["SEO Audit Report", "/tools/seo-audit", "Create an evidence-based report with fixes."],
   ["Install GVC OS", "/tools/seo-audit?mode=gvc", "Read the local-first operating workflow."],
+  ["DhanSetu PDF Tools", "/pdf-tools", "Open the local document workspace with 26 original workflows."],
 ];
 
 function PortfolioGroup({ title, items }: { title: string; items: string[][] }) {
