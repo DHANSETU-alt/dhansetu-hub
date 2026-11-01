@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createBrowserSupabase } from "@/lib/supabase/client";
 
@@ -14,6 +14,23 @@ export function LoginForm() {
   const [busy, setBusy] = useState(false);
   const next = params.get("next");
   const destination = next?.startsWith("/") && !next.startsWith("//") ? next : "/checkout?tier=smartbudget_pro";
+  const authErrorMessage = (error: { message?: string } | null, provider = "Google") => {
+    const message = error?.message || "Authentication could not be completed. Try again.";
+    if (/unsupported provider|provider is not enabled/i.test(message)) {
+      return `Provider not enabled: ${provider} sign-in is disabled. Enable it in Supabase Dashboard > Auth > Providers, then add https://dhansetuhub.in/auth/callback to the redirect URLs. Email + password remains available; no token was saved.`;
+    }
+    return message;
+  };
+
+  useEffect(() => {
+    const error = params.get("error");
+    const messages: Record<string, string> = {
+      auth_unavailable: "Sign-in is temporarily unavailable because the Supabase public configuration is missing.",
+      missing_auth_code: "Google sign-in returned without an authorization code. Try again.",
+      oauth_callback_failed: "Google sign-in could not complete. The Google provider or callback URL is not configured in Supabase yet.",
+    };
+    if (error && messages[error]) setMessage(messages[error]);
+  }, [params]);
 
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setMessage("");
@@ -42,7 +59,17 @@ export function LoginForm() {
       provider: "google",
       options: { redirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(destination)}` },
     });
-    if (error) { setBusy(false); setMessage(error.message); }
+    if (error) { setBusy(false); setMessage(authErrorMessage(error, "Google")); }
+  }
+
+  async function signInWithGitHub() {
+    setBusy(true); setMessage("");
+    const supabase = createBrowserSupabase();
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "github",
+      options: { redirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(destination)}` },
+    });
+    if (error) { setBusy(false); setMessage(authErrorMessage(error, "GitHub")); }
   }
 
   return <form onSubmit={submit} className="mx-auto max-w-md space-y-5 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
@@ -52,7 +79,7 @@ export function LoginForm() {
     {mode !== "reset" && <label className="block text-sm font-medium">Password<input className="mt-1 w-full rounded-lg border p-3" type="password" minLength={8} required value={password} onChange={(e) => setPassword(e.target.value)} /></label>}
     {message && <p role="alert" className="text-sm text-rose-700">{message}</p>}
     <button disabled={busy} className="w-full rounded-lg bg-emerald-600 p-3 font-semibold text-white disabled:opacity-50">{busy ? "Please wait…" : mode === "login" ? "Sign in" : mode === "signup" ? "Create account" : "Email reset link"}</button>
-    {mode !== "reset" && <><div className="flex items-center gap-3 text-xs text-slate-400"><span className="h-px flex-1 bg-slate-200" />or<span className="h-px flex-1 bg-slate-200" /></div><button type="button" disabled={busy} onClick={() => void signInWithGoogle()} className="w-full rounded-lg border border-slate-300 bg-white p-3 font-semibold text-slate-800 disabled:opacity-50">Continue with Google</button></>}
+    {mode !== "reset" && <><div className="flex items-center gap-3 text-xs text-slate-400"><span className="h-px flex-1 bg-slate-200" />or<span className="h-px flex-1 bg-slate-200" /></div><button type="button" disabled={busy} onClick={() => void signInWithGoogle()} className="w-full rounded-lg border border-slate-300 bg-white p-3 font-semibold text-slate-800 disabled:opacity-50">Continue with Google</button><button type="button" disabled={busy} onClick={() => void signInWithGitHub()} className="w-full rounded-lg border border-slate-300 bg-slate-950 p-3 font-semibold text-white disabled:opacity-50">Continue with GitHub</button></>}
     {mode === "login" && <button type="button" className="w-full text-sm text-emerald-700 underline" onClick={() => { setMessage(""); setMode("reset"); }}>Forgot password?</button>}
     <button type="button" className="w-full text-sm text-emerald-700 underline" onClick={() => { setMessage(""); setMode(mode === "login" || mode === "reset" ? "signup" : "login"); }}>{mode === "login" || mode === "reset" ? "New here? Create an account" : "Already registered? Sign in"}</button>
   </form>;
