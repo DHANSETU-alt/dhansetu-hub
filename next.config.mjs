@@ -4,6 +4,11 @@ import { contentSecurityPolicy } from './config/content-security-policy.mjs';
 const nextConfig = {
   output: 'standalone',
   serverExternalPackages: ['googleapis'],
+  // Render's Free instance cannot afford a second full TypeScript worker
+  // after the production bundle. Run `npm run typecheck` locally/CI instead.
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   experimental: {
     // Keep the build bounded for Render's free-instance memory limit.
     // The CLI child process loses its captured JSON stream in this host.
