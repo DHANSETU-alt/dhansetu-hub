@@ -1,0 +1,9 @@
+{
+  "order_draft": true,
+  "amount": 1,
+  "currency": "INR",
+  "captured": false,
+  "blocked_external": true,
+  "evidence_gated": true,
+  "autoredirect_draft": "/client/access?token=local_draft"
+}

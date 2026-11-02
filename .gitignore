@@ -38,3 +38,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local GVC/Better Auth runtime state
+.gvc/memory/*.db
+.gvc/memory/*.sqlite*

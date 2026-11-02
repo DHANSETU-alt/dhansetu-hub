@@ -1,12 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { createBrowserSupabase } from "@/lib/supabase/client";
+import { authClient } from "@/lib/better-auth-client";
 
 export function LogoutButton() {
   const router = useRouter();
   async function logout() {
-    await createBrowserSupabase().auth.signOut();
+    await authClient.signOut();
     router.replace("/");
     router.refresh();
   }

@@ -1,0 +1,10 @@
+Local reverse-engineering note for Dhansetu-PDF Toolskit.
+
+Reference: docs/reference/Stirling-PDF/docker/backend/Dockerfile
+
+- The current upstream reference is a multi-stage Gradle/JDK backend image.
+- It builds a Spring Boot backend and uses a separate runtime/base image.
+- It includes native PDF/OCR-related runtime assets and exposes a backend service.
+- DhanSetu does not copy this Java application into its customer UI.
+- DhanSetu's local toolskit remains an original Next.js/pdf-lib implementation,
+  built with Dockerfile.dhansetu-toolskit and exposed locally on port 8080.

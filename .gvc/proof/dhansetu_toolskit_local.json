@@ -1,0 +1,11 @@
+{
+  "reverse_engineered": "Stirling-PDF Docker architecture inspected locally",
+  "original_launch": "docker run -p 8080:8080 dhansetu-pdf-toolskit:1.3-local-only",
+  "tools": 26,
+  "original_code": true,
+  "local_only": true,
+  "port": 8080,
+  "page_http": 200,
+  "root_http": 307,
+  "external_registry_push": false
+}

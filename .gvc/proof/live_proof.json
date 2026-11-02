@@ -1,0 +1,14 @@
+{
+  "better_auth_local": true,
+  "email_session_local": true,
+  "google_credentials_configured": false,
+  "toolskit_local": 200,
+  "toolskit_root_local": 307,
+  "public_deploy": false,
+  "no_payment": true,
+  "no_push": true,
+  "no_external": true,
+  "version": "1.3",
+  "tasks": "7 complete local evidence + 8 gated recorded blocked",
+  "external_actions_disabled": true
+}

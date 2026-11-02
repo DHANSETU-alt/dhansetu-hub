@@ -1,0 +1,12 @@
+{
+  "from": "Supabase Auth",
+  "to": "Better Auth",
+  "local_only": true,
+  "provider_error_removed": true,
+  "email_password_session_verified": true,
+  "google_provider_code_path": true,
+  "google_credentials_configured": false,
+  "sqlite_persistent": ".gvc/memory/auth.db",
+  "public_deployment": false,
+  "external_actions_disabled": true
+}

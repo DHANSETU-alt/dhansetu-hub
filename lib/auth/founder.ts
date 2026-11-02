@@ -1,10 +1,8 @@
-import { createServerSupabase, hasSupabasePublicConfig } from "@/lib/supabase/server";
+import { getCurrentAuthSession } from "@/lib/better-auth-session";
 
 export async function requireFounder() {
-  if (!hasSupabasePublicConfig()) return { user: null, allowed: false as const };
-  const supabase = await createServerSupabase();
-  const { data } = await supabase.auth.getUser();
-  if (!data.user) return { user: null, allowed: false as const };
+  const session = await getCurrentAuthSession();
+  if (!session?.user) return { user: null, allowed: false as const };
   const allowedIds = (process.env.FOUNDER_USER_IDS ?? "").split(",").map((value) => value.trim()).filter(Boolean);
-  return { user: data.user, allowed: allowedIds.includes(data.user.id) as boolean };
+  return { user: session.user, allowed: allowedIds.includes(session.user.id) as boolean };
 }

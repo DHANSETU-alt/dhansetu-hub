@@ -1,0 +1,8 @@
+{
+  "old": "Supabase provider Unsupported provider error",
+  "new": "Better Auth local code-configured provider",
+  "status": "local fix verified; public release gated",
+  "fallback_email": true,
+  "google_runtime_credentials": "not configured",
+  "external_actions_disabled": true
+}

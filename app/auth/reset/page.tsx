@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createBrowserSupabase } from "@/lib/supabase/client";
+import { authClient } from "@/lib/better-auth-client";
 
 function PasswordResetForm() {
   const router = useRouter();
@@ -15,25 +15,23 @@ function PasswordResetForm() {
   const [message, setMessage] = useState("");
   const next = params.get("next");
   const destination = next?.startsWith("/") && !next.startsWith("//") ? next : "/";
+  const token = params.get("token") || "";
 
   useEffect(() => {
-    const supabase = createBrowserSupabase();
     let active = true;
-    void supabase.auth.getSession().then(({ data }) => { if (active) setReady(Boolean(data.session)); });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (active) setReady(Boolean(session));
-    });
-    return () => { active = false; listener.subscription.unsubscribe(); };
-  }, []);
+    if (token) { setReady(true); return () => { active = false; }; }
+    void authClient.getSession().then(({ data }) => { if (active) setReady(Boolean(data?.session)); });
+    return () => { active = false; };
+  }, [token]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (password.length < 8) return setMessage("Use at least 8 characters.");
     if (password !== confirmation) return setMessage("Passwords do not match.");
     setBusy(true); setMessage("");
-    const { error } = await createBrowserSupabase().auth.updateUser({ password });
+    const { error } = await authClient.resetPassword({ newPassword: password, token });
     setBusy(false);
-    if (error) return setMessage(error.message);
+    if (error) return setMessage(error.message ?? "Password could not be updated.");
     setMessage("Password updated. Redirecting…");
     router.replace(destination);
     router.refresh();

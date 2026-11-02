@@ -1,0 +1,7 @@
+{
+  "healthy": false,
+  "attempted": true,
+  "blocked_external": true,
+  "local_db": ".gvc/memory/dify/local.db",
+  "authority": "gated - local evidence only"
+}

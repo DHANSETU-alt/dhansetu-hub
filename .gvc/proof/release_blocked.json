@@ -1,0 +1,6 @@
+{
+  "release": false,
+  "local_browser_proof": true,
+  "blocked_external": true,
+  "reason": "no public push/deploy/payment/cloud action authorized"
+}

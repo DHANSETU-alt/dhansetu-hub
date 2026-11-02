@@ -1,4 +1,3 @@
-import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import {
   REFERRAL_COOKIE,
@@ -33,6 +32,10 @@ function applySecurityHeaders(response: NextResponse) {
   }
 }
 
+function hasBetterAuthSessionCookie(request: NextRequest) {
+  return request.cookies.has("better-auth.session_token") || request.cookies.has("__Secure-better-auth.session_token");
+}
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
   applySecurityHeaders(response);
@@ -40,31 +43,11 @@ export async function middleware(request: NextRequest) {
     captureReferral(request, response);
     return response;
   }
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return response;
-
-  const supabase = createServerClient(url, key, {
-    cookies: {
-      getAll: () => request.cookies.getAll(),
-      setAll(values) {
-        values.forEach(({ name, value }) => request.cookies.set(name, value));
-        response = NextResponse.next({ request });
-        applySecurityHeaders(response);
-        values.forEach(({ name, value, options }) =>
-          response.cookies.set(name, value, {
-            ...options,
-            ...(process.env.NEXT_PUBLIC_AUTH_COOKIE_DOMAIN
-              ? { domain: process.env.NEXT_PUBLIC_AUTH_COOKIE_DOMAIN }
-              : {}),
-          }),
-        );
-      },
-    },
-  });
-  await supabase.auth.getUser();
-  // After the session refresh, because that block may replace `response`.
   captureReferral(request, response);
+  const protectedPath = request.nextUrl.pathname.startsWith("/client/") || request.nextUrl.pathname.startsWith("/dashboard/1cr");
+  if (protectedPath && !hasBetterAuthSessionCookie(request)) {
+    return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(request.nextUrl.pathname)}`, request.url));
+  }
   return response;
 }
 

@@ -1,0 +1,6 @@
+{
+  "public_deploy": false,
+  "local_build": true,
+  "blocked": true,
+  "reason": "external actions disabled - local evidence only"
+}

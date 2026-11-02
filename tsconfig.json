@@ -38,6 +38,8 @@
   "exclude": [
     "node_modules",
     "dashboard",
-    "backups"
+    "backups",
+    "docs/reference",
+    ".gvc"
   ]
 }

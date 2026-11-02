@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createBrowserSupabase } from "@/lib/supabase/client";
+import { authClient } from "@/lib/better-auth-client";
 
 export function LoginForm() {
   const router = useRouter();
@@ -14,61 +14,49 @@ export function LoginForm() {
   const [busy, setBusy] = useState(false);
   const next = params.get("next");
   const destination = next?.startsWith("/") && !next.startsWith("//") ? next : "/checkout?tier=smartbudget_pro";
-  const authErrorMessage = (error: { message?: string } | null, provider = "Google") => {
-    const message = error?.message || "Authentication could not be completed. Try again.";
-    if (/unsupported provider|provider is not enabled/i.test(message)) {
-      return `Provider not enabled: ${provider} sign-in is disabled. Enable it in Supabase Dashboard > Auth > Providers, then add https://dhansetuhub.in/auth/callback to the redirect URLs. Email + password remains available; no token was saved.`;
-    }
-    return message;
-  };
+  const authErrorMessage = (error: { message?: string } | null) => error?.message || "Authentication could not be completed. Try again.";
 
   useEffect(() => {
     const error = params.get("error");
     const messages: Record<string, string> = {
-      auth_unavailable: "Sign-in is temporarily unavailable because the Supabase public configuration is missing.",
-      missing_auth_code: "Google sign-in returned without an authorization code. Try again.",
-      oauth_callback_failed: "Google sign-in could not complete. The Google provider or callback URL is not configured in Supabase yet.",
-      google_direct_not_configured: "Google sign-in is not configured yet. Add the direct Google OAuth credentials to the server environment.",
-      google_direct_failed: "Google sign-in could not be completed. Please try email sign-in or check the direct Google OAuth configuration.",
+      auth_unavailable: "Sign-in is temporarily unavailable. Try again in a moment.",
+      missing_auth_code: "Sign-in returned without an authorization code. Try again.",
+      oauth_callback_failed: "Sign-in could not complete. Try email and password instead.",
+      google_direct_not_configured: "Google sign-in is not configured yet. Email and password sign-in remains available.",
+      google_direct_failed: "Google sign-in could not be completed. Please try email sign-in.",
     };
     if (error && messages[error]) setMessage(messages[error]);
   }, [params]);
 
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setMessage("");
-    const supabase = createBrowserSupabase();
     if (mode === "reset") {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      const { error } = await authClient.requestPasswordReset({
+        email,
         redirectTo: `${location.origin}/auth/reset?next=${encodeURIComponent(destination)}`,
       });
       setBusy(false);
-      if (error) return setMessage(error.message);
+      if (error) return setMessage(error.message ?? "Password reset could not be requested.");
       return setMessage("Check your email for a secure password-reset link.");
     }
     const result = mode === "login"
-      ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${location.origin}${destination}` } });
+      ? await authClient.signIn.email({ email, password, callbackURL: destination })
+      : await authClient.signUp.email({ email, password, name: email.split("@")[0], callbackURL: destination });
     setBusy(false);
-    if (result.error) return setMessage(result.error.message);
-    if (mode === "signup" && !result.data.session) return setMessage("Check your email to confirm your account, then return here to sign in.");
+    if (result.error) return setMessage(result.error.message ?? "Authentication could not be completed.");
     router.replace(destination); router.refresh();
   }
 
   async function signInWithGoogle() {
     setBusy(true); setMessage("");
-    // Direct Google OAuth bypasses the disabled Supabase Google provider. The
-    // server verifies Google's ID token and then creates the normal Supabase session.
-    window.location.assign(`/api/auth/google-direct/start?next=${encodeURIComponent(destination)}`);
+    const { error } = await authClient.signIn.social({ provider: "google", callbackURL: destination });
+    if (error) { setBusy(false); setMessage(authErrorMessage(error)); }
   }
 
   async function signInWithGitHub() {
     setBusy(true); setMessage("");
-    const supabase = createBrowserSupabase();
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "github",
-      options: { redirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(destination)}` },
-    });
-    if (error) { setBusy(false); setMessage(authErrorMessage(error, "GitHub")); }
+    const { error } = await authClient.signIn.social({ provider: "github", callbackURL: destination });
+    if (error) { setBusy(false); setMessage(authErrorMessage(error)); }
   }
 
   return <form onSubmit={submit} className="mx-auto max-w-md space-y-5 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
