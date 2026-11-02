@@ -1,0 +1,4 @@
+# Cloudflare Pages compatibility routes for the static DhanSetu landing surface.
+# The full Next.js application remains the authoritative runtime for API/auth routes.
+/ /aistudio/index.html 301
+/auth/callback /aistudio/index.html 200
