@@ -3,6 +3,10 @@ import { contentSecurityPolicy } from './config/content-security-policy.mjs';
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // Keep Render's Free-tier build from retaining prerender source maps and
+  // preloading every route module while the page-data worker starts.
+  productionBrowserSourceMaps: false,
+  enablePrerenderSourceMaps: false,
   serverExternalPackages: ['googleapis'],
   // Render's Free instance cannot afford a second full TypeScript worker
   // after the production bundle. Run `npm run typecheck` locally/CI instead.
@@ -15,6 +19,7 @@ const nextConfig = {
     useTypeScriptCli: false,
     cpus: 1,
     webpackMemoryOptimizations: true,
+    preloadEntriesOnStart: false,
   },
   async headers() {
     return [
