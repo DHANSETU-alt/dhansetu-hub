@@ -5,10 +5,11 @@ const nextConfig = {
   output: 'standalone',
   serverExternalPackages: ['googleapis'],
   experimental: {
-    // Keep type checking in-process for the current Linux/Node runner.
+    // Keep the build bounded for Render's free-instance memory limit.
     // The CLI child process loses its captured JSON stream in this host.
     useTypeScriptCli: false,
-    workerThreads: true,
+    cpus: 1,
+    workerThreads: false,
   },
   async headers() {
     return [
@@ -16,7 +17,7 @@ const nextConfig = {
         source: '/(.*)',
         headers: [
           { key: 'Content-Security-Policy', value: contentSecurityPolicy() },
-          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains; preload' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
