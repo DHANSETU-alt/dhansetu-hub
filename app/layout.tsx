@@ -6,6 +6,12 @@ import { GoogleAnalytics } from "@/components/analytics/GoogleAnalytics";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { SiteFooter } from "@/components/SiteFooter";
 
+// Render's Free instance is memory-constrained during Next's static page-data
+// worker. Keep the full app request-driven; local/CI still runs typecheck and
+// production build as the correctness gate.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
   variable: "--font-geist-sans",
