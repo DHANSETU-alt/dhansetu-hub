@@ -28,6 +28,8 @@ export function LoginForm() {
       auth_unavailable: "Sign-in is temporarily unavailable because the Supabase public configuration is missing.",
       missing_auth_code: "Google sign-in returned without an authorization code. Try again.",
       oauth_callback_failed: "Google sign-in could not complete. The Google provider or callback URL is not configured in Supabase yet.",
+      google_direct_not_configured: "Google sign-in is not configured yet. Add the direct Google OAuth credentials to the server environment.",
+      google_direct_failed: "Google sign-in could not be completed. Please try email sign-in or check the direct Google OAuth configuration.",
     };
     if (error && messages[error]) setMessage(messages[error]);
   }, [params]);
@@ -54,12 +56,9 @@ export function LoginForm() {
 
   async function signInWithGoogle() {
     setBusy(true); setMessage("");
-    const supabase = createBrowserSupabase();
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(destination)}` },
-    });
-    if (error) { setBusy(false); setMessage(authErrorMessage(error, "Google")); }
+    // Direct Google OAuth bypasses the disabled Supabase Google provider. The
+    // server verifies Google's ID token and then creates the normal Supabase session.
+    window.location.assign(`/api/auth/google-direct/start?next=${encodeURIComponent(destination)}`);
   }
 
   async function signInWithGitHub() {
