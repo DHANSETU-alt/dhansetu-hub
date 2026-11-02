@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { PDFDocument } from "pdf-lib";
 
-export const runtime = "edge";
+// pdf-lib uses the Node runtime reliably on Render's constrained builder.
+export const runtime = "nodejs";
 
 export async function POST(request: Request, { params }: { params: Promise<{ tool: string }> }) {
   const { tool } = await params;
