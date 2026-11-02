@@ -14,7 +14,7 @@ const nextConfig = {
     // The CLI child process loses its captured JSON stream in this host.
     useTypeScriptCli: false,
     cpus: 1,
-    workerThreads: false,
+    webpackMemoryOptimizations: true,
   },
   async headers() {
     return [
