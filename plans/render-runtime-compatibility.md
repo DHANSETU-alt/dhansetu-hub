@@ -9,8 +9,8 @@ This is a direct runtime compatibility reproduction and matches the observed nat
 ## Source safeguard prepared
 
 - `.node-version` pins 24.22.2 for hosts that read the repository file.
-- `package.json` and the lockfile require Node `>=22 <27`, so incompatible installs fail early.
+- `package.json` and the lockfile root metadata require Node `>=22 <27`, so incompatible installs are explicitly marked.
 
 ## Remaining live action
 
-Render docs state that a dashboard `NODE_VERSION` environment variable overrides `.node-version`. The live service still has that variable set to 20.20.2. Set it to 24.22.2 (or remove it so the repository pin applies), then rebuild and verify `/api/health`, `/checkout`, and `/gst` over HTTPS. No Render environment or deployment was changed in this local step.
+Render docs state that a dashboard `NODE_VERSION` environment variable overrides `.node-version`. The live service had that variable set to 20.20.2 at diagnosis. Set it to 24.22.2 (or remove it so the repository pin applies), rebuild, and verify `/api/health`, `/checkout`, and `/gst` over HTTPS. Deployment remains unverified until those requests pass.
