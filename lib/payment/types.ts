@@ -8,12 +8,14 @@ export type Purchase = {
   razorpay_payment_id: string | null;
   amount_paise: number;
   currency: string;
-  status: "created" | "paid" | "failed";
+  status: "created" | "paid" | "failed" | "partially_refunded" | "refunded";
   consented_at: string;
   consent_ip: string;
   terms_version: string;
   created_at: string;
   paid_at: string | null;
+  refunded_amount_paise?: number;
+  refunded_at?: string | null;
 };
 
 export type RazorpayOrder = {
